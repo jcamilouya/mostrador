@@ -1,0 +1,139 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { getPlanInfo } from '@/lib/plan/queries';
+import type { VentaResult } from './types';
+
+const itemSchema = z.object({
+  producto_id: z.uuid(),
+  cantidad: z.number().int().positive(),
+  precio_unitario: z.number().nonnegative(),
+  precio_compra: z.number().nonnegative(),
+  nombre: z.string().min(1),
+});
+
+const ventaSchema = z.object({
+  metodo_pago: z.enum(['efectivo', 'breb', 'transferencia', 'mixto']),
+  items: z.array(itemSchema).min(1, { error: 'Agrega al menos un producto' }),
+  notas: z.string().max(500).optional(),
+  // Para Bre-B: true = el dueño ya confirmó el pago en el POS (completa la venta).
+  confirmado: z.boolean().optional(),
+});
+
+export async function registrarVenta(input: unknown): Promise<VentaResult> {
+  const parsed = ventaSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
+  }
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'No autenticado' };
+
+  const { data: usuario } = await supabase
+    .from('usuarios')
+    .select('empresa_id')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (!usuario?.empresa_id) return { ok: false, error: 'Sin empresa' };
+
+  const empresaId = usuario.empresa_id;
+
+  // Bloqueo suave: trial vencido sin plan pagado no puede crear ventas nuevas.
+  const plan = await getPlanInfo(empresaId);
+  if (plan.bloqueado) {
+    return {
+      ok: false,
+      error: 'Tu prueba gratis terminó. Mejora tu plan para seguir vendiendo.',
+    };
+  }
+
+  const admin = createAdminClient();
+
+  const subtotal = parsed.data.items.reduce(
+    (acc, i) => acc + i.cantidad * i.precio_unitario,
+    0,
+  );
+  const total = subtotal;
+
+  // Bre-B queda pendiente salvo que el dueño confirme el pago en el momento.
+  const pendiente = parsed.data.metodo_pago === 'breb' && !parsed.data.confirmado;
+
+  // Insertar venta
+  const { data: venta, error: ventaErr } = await admin
+    .from('ventas')
+    .insert({
+      empresa_id: empresaId,
+      subtotal,
+      iva: 0,
+      total,
+      metodo_pago: parsed.data.metodo_pago,
+      estado: pendiente ? 'pendiente' : 'completada',
+      notas: parsed.data.notas ?? null,
+    })
+    .select('id, numero_venta, total')
+    .single();
+
+  if (ventaErr || !venta) {
+    return { ok: false, error: 'No pudimos registrar la venta. Intenta de nuevo.' };
+  }
+
+  // Insertar items
+  const itemsRows = parsed.data.items.map((i) => ({
+    venta_id: venta.id,
+    producto_id: i.producto_id,
+    nombre_producto: i.nombre,
+    cantidad: i.cantidad,
+    precio_unitario: i.precio_unitario,
+    precio_compra: i.precio_compra,
+    subtotal: i.cantidad * i.precio_unitario,
+  }));
+
+  const { error: itemsErr } = await admin.from('venta_items').insert(itemsRows);
+  if (itemsErr) {
+    await admin.from('ventas').delete().eq('id', venta.id);
+    return { ok: false, error: 'No pudimos guardar los items de la venta.' };
+  }
+
+  // Descontar stock + registrar movimiento, solo si la venta queda completada
+  if (!pendiente) {
+    for (const i of parsed.data.items) {
+      const { data: prodActual } = await admin
+        .from('productos')
+        .select('stock_actual')
+        .eq('id', i.producto_id)
+        .eq('empresa_id', empresaId)
+        .single();
+      const stockNuevo = Math.max(0, (prodActual?.stock_actual ?? 0) - i.cantidad);
+      await admin
+        .from('productos')
+        .update({ stock_actual: stockNuevo, updated_at: new Date().toISOString() })
+        .eq('id', i.producto_id)
+        .eq('empresa_id', empresaId);
+
+      await admin.from('movimientos_inventario').insert({
+        empresa_id: empresaId,
+        producto_id: i.producto_id,
+        tipo: 'salida',
+        cantidad: i.cantidad,
+        referencia_tipo: 'venta',
+        referencia_id: venta.id,
+        notas: `Venta #${venta.numero_venta}`,
+      });
+    }
+  }
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/pos');
+  revalidatePath('/dashboard/inventario');
+
+  return {
+    ok: true,
+    ventaId: venta.id,
+    numero: venta.numero_venta,
+    total: Number(venta.total),
+  };
+}
