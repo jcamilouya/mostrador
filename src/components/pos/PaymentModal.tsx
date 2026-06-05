@@ -16,6 +16,7 @@ import { Banknote, QrCode, ArrowLeftRight, CheckCircle2, Loader2, Settings } fro
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
 import { registrarVenta } from '@/lib/pos/actions';
+import { generarQRPago } from '@/lib/breb/qr-action';
 import type { MetodoPago } from '@/lib/pos/types';
 import type { BrebConfig } from '@/lib/breb/queries';
 import { BrebQR } from '@/components/breb/BrebQR';
@@ -44,6 +45,9 @@ export function PaymentModal({
   const [numeroVenta, setNumeroVenta] = useState<number | null>(null);
   const [fuePendiente, setFuePendiente] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [qrPayload, setQrPayload] = useState<string | null>(null);
+  const [qrId, setQrId] = useState<string | null>(null);
+  const [qrCargando, setQrCargando] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -52,8 +56,23 @@ export function PaymentModal({
       setError('');
       setNumeroVenta(null);
       setFuePendiente(false);
+      setQrPayload(null);
+      setQrId(null);
     }
   }, [open]);
+
+  // Cargar el QR cuando el usuario entra al paso Bre-B
+  useEffect(() => {
+    if (step !== 'breb' || !breb.configurado) return;
+    setQrCargando(true);
+    generarQRPago(total).then((res) => {
+      if (res) {
+        setQrPayload(res.payload);
+        setQrId(res.qrId ?? null);
+      }
+      setQrCargando(false);
+    }).catch(() => setQrCargando(false));
+  }, [step, breb.configurado, total]);
 
   const cambio = useMemo(() => Math.max(0, recibido - total), [recibido, total]);
 
@@ -63,6 +82,7 @@ export function PaymentModal({
       const res = await registrarVenta({
         metodo_pago: metodo,
         confirmado,
+        breb_transaccion_id: metodo === 'breb' && qrId ? qrId : undefined,
         items: items.map((i) => ({
           producto_id: i.producto_id,
           cantidad: i.cantidad,
@@ -189,7 +209,18 @@ export function PaymentModal({
           breb.configurado && breb.llave ? (
             <div className="space-y-4 text-center">
               <div className="flex justify-center">
-                <BrebQR llave={breb.llave} nombre={breb.nombreNegocio} monto={total} />
+                {qrCargando ? (
+                  <div className="flex items-center justify-center rounded-2xl bg-secondary" style={{ width: 208, height: 208 }}>
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <BrebQR
+                    overridePayload={qrPayload ?? undefined}
+                    llave={breb.llave}
+                    nombre={breb.nombreNegocio}
+                    monto={total}
+                  />
+                )}
               </div>
               <p className="text-sm text-muted-foreground">
                 El cliente escanea el QR desde la app de su banco y paga{' '}

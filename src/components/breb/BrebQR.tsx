@@ -10,12 +10,15 @@ export function BrebQR({
   nombre,
   monto,
   referencia,
+  overridePayload,
   size = 208,
 }: {
-  llave: string;
-  nombre: string;
+  llave?: string;
+  nombre?: string;
   monto?: number;
   referencia?: string;
+  /** Payload EMVCo pre-generado (ej: desde la API de Bancolombia). Si se provee, omite la generación local. */
+  overridePayload?: string;
   size?: number;
 }) {
   const [src, setSrc] = useState<string | null>(null);
@@ -23,12 +26,13 @@ export function BrebQR({
 
   useEffect(() => {
     let activo = true;
-    if (!llave) {
+    const hasContent = overridePayload || llave;
+    if (!hasContent) {
       setSrc(null);
       return;
     }
     setError(false);
-    const payload = construirPayloadBreb({ llave, nombre, monto, referencia });
+    const payload = overridePayload ?? construirPayloadBreb({ llave: llave!, nombre: nombre ?? '', monto, referencia });
     QRCode.toDataURL(payload, { width: size, margin: 1, errorCorrectionLevel: 'M' })
       .then((url) => activo && setSrc(url))
       .catch(() => activo && setError(true));
@@ -37,7 +41,7 @@ export function BrebQR({
     };
   }, [llave, nombre, monto, referencia, size]);
 
-  if (!llave) {
+  if (!overridePayload && !llave) {
     return (
       <div
         className="flex items-center justify-center rounded-2xl bg-secondary text-muted-foreground"

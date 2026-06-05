@@ -21,6 +21,8 @@ const ventaSchema = z.object({
   notas: z.string().max(500).optional(),
   // Para Bre-B: true = el dueño ya confirmó el pago en el POS (completa la venta).
   confirmado: z.boolean().optional(),
+  // ID del QR generado por Bancolombia — para conciliar con el webhook de pago.
+  breb_transaccion_id: z.string().max(120).optional(),
 });
 
 export async function registrarVenta(input: unknown): Promise<VentaResult> {
@@ -72,6 +74,8 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
       total,
       metodo_pago: parsed.data.metodo_pago,
       estado: pendiente ? 'pendiente' : 'completada',
+      breb_transaccion_id: parsed.data.breb_transaccion_id ?? null,
+      breb_estado: pendiente ? 'pendiente' : null,
       notas: parsed.data.notas ?? null,
     })
     .select('id, numero_venta, total')
