@@ -96,7 +96,10 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
         </ul>
       )}
 
-      <footer className="border-t px-4 py-4 space-y-3">
+      <footer
+        className="border-t px-4 pt-4 space-y-3"
+        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+      >
         <div className="flex items-end justify-between">
           <span className="text-sm text-muted-foreground">Total</span>
           <span className="text-3xl font-semibold tabular-nums">
@@ -105,7 +108,7 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
         </div>
         <Button
           size="lg"
-          className="w-full rounded-2xl h-12 text-base"
+          className="w-full rounded-2xl h-14 text-base font-semibold"
           disabled={empty}
           onClick={() => setPayOpen(true)}
         >
@@ -132,26 +135,26 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
         {Body}
       </aside>
 
-      {/* Mobile: barra inferior sticky */}
-      <div className="fixed bottom-20 left-0 right-0 z-20 px-4 lg:hidden">
-        <button
-          onClick={() => setOpen(true)}
-          disabled={empty}
-          className={`flex w-full items-center justify-between rounded-2xl px-5 py-3 shadow-lg transition-all ${
-            empty
-              ? 'bg-secondary text-muted-foreground'
-              : 'bg-foreground text-background'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-background/20 text-sm font-semibold">
-              {totalItems}
-            </span>
-            <span className="text-sm">Ver venta</span>
-          </div>
-          <span className="text-lg font-semibold tabular-nums">{formatCOP(total)}</span>
-        </button>
-      </div>
+      {/* Mobile: barra inferior sticky — solo visible cuando hay items */}
+      {!empty && (
+        <div className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] left-0 right-0 z-20 px-4 lg:hidden">
+          <button
+            onClick={() => setOpen(true)}
+            className="flex w-full items-center justify-between rounded-2xl bg-foreground px-5 py-4 text-background shadow-xl"
+          >
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="h-5 w-5 shrink-0" />
+              <span className="font-semibold">
+                {totalItems} {totalItems === 1 ? 'producto' : 'productos'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-bold tabular-nums">{formatCOP(total)}</span>
+              <span className="rounded-lg bg-background/15 px-2 py-0.5 text-sm font-medium">Cobrar</span>
+            </div>
+          </button>
+        </div>
+      )}
 
       {/* Mobile bottom sheet */}
       {open && (

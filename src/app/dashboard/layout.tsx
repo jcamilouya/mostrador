@@ -34,7 +34,7 @@ export default async function DashboardLayout({
     <div className="flex min-h-screen bg-background">
       <RealtimeRefresher empresaId={usuario.empresa_id} />
       <Sidebar negocio={nombreEmpresa} />
-      <div className="flex flex-1 flex-col pb-20 lg:pb-0">
+      <div className="flex flex-1 flex-col pb-[calc(5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
         <PlanBanner plan={plan} />
         <main className="flex-1 px-4 py-6 lg:px-8 lg:py-8">{children}</main>
       </div>
