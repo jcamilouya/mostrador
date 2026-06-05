@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFormStatus } from 'react-dom';
 import { Loader2, Check } from 'lucide-react';
@@ -38,6 +38,12 @@ export function ClienteForm({
   const router = useRouter();
   const [state, formAction] = useActionState<ClienteState, FormData>(action, {});
 
+  // Inputs controlados: evita el warning de Base UI cuando la revalidación
+  // tras guardar reemplaza el defaultValue de un campo no-controlado.
+  const [nombre, setNombre] = useState(cliente?.nombre ?? '');
+  const [telefono, setTelefono] = useState(cliente?.telefono ?? '');
+  const [notas, setNotas] = useState(cliente?.notas ?? '');
+
   useEffect(() => {
     if (state.ok && !cliente) {
       router.push('/dashboard/clientes');
@@ -53,7 +59,8 @@ export function ClienteForm({
             id="nombre"
             name="nombre"
             required
-            defaultValue={cliente?.nombre ?? ''}
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
             placeholder="Nombre del cliente"
             className="h-11 rounded-xl"
           />
@@ -65,7 +72,8 @@ export function ClienteForm({
             name="telefono"
             type="tel"
             inputMode="numeric"
-            defaultValue={cliente?.telefono ?? ''}
+            value={telefono}
+            onChange={(e) => setTelefono(e.target.value)}
             placeholder="310 555 1234"
             className="h-11 rounded-xl"
           />
@@ -75,7 +83,8 @@ export function ClienteForm({
           <Textarea
             id="notas"
             name="notas"
-            defaultValue={cliente?.notas ?? ''}
+            value={notas}
+            onChange={(e) => setNotas(e.target.value)}
             placeholder="Lo que quieras recordar de este cliente…"
             className="rounded-xl"
             rows={3}

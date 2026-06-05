@@ -18,6 +18,7 @@ import { formatCOP } from '@/lib/utils/format';
 import { registrarVenta } from '@/lib/pos/actions';
 import { generarQRPago } from '@/lib/breb/qr-action';
 import { abrirWhatsAppRecibo, type ReciboData } from '@/lib/recibo';
+import { guardarClienteDesdeRecibo } from '@/lib/clientes/actions';
 import type { MetodoPago } from '@/lib/pos/types';
 import type { BrebConfig } from '@/lib/breb/queries';
 import { BrebQR } from '@/components/breb/BrebQR';
@@ -45,9 +46,14 @@ export function PaymentModal({
   const [recibido, setRecibido] = useState<number>(0);
   const [error, setError] = useState<string>('');
   const [numeroVenta, setNumeroVenta] = useState<number | null>(null);
+  const [ventaIdActual, setVentaIdActual] = useState<string | null>(null);
   const [fuePendiente, setFuePendiente] = useState(false);
   const [reciboData, setReciboData] = useState<ReciboData | null>(null);
   const [telefono, setTelefono] = useState('');
+  const [nombreCliente, setNombreCliente] = useState('');
+  const [guardarCli, setGuardarCli] = useState(true);
+  // Snapshot del cliente vinculado en el carrito (antes de limpiarlo).
+  const [clienteSnap, setClienteSnap] = useState<{ id: string; nombre: string; telefono: string | null } | null>(null);
   const [reciboEnviado, setReciboEnviado] = useState(false);
   const [pending, startTransition] = useTransition();
   const [qrPayload, setQrPayload] = useState<string | null>(null);
@@ -60,9 +66,13 @@ export function PaymentModal({
       setRecibido(0);
       setError('');
       setNumeroVenta(null);
+      setVentaIdActual(null);
       setFuePendiente(false);
       setReciboData(null);
       setTelefono('');
+      setNombreCliente('');
+      setGuardarCli(true);
+      setClienteSnap(null);
       setReciboEnviado(false);
       setQrPayload(null);
       setQrId(null);
@@ -83,6 +93,33 @@ export function PaymentModal({
   }, [step, breb.configurado, total]);
 
   const cambio = useMemo(() => Math.max(0, recibido - total), [recibido, total]);
+
+  const telDigits = telefono.replace(/\D/g, '');
+  const telValido = telDigits.length >= 10;
+  // ¿Hay algo que guardar en clientes? Cliente nuevo con nombre, o cliente
+  // existente sin teléfono al que le acabamos de poner uno.
+  const puedeGuardarCliente = clienteSnap
+    ? !clienteSnap.telefono && telValido
+    : nombreCliente.trim().length > 0;
+
+  function enviarRecibo() {
+    if (!reciboData) return;
+    // Guardar/actualizar cliente en segundo plano si aplica.
+    if (guardarCli && puedeGuardarCliente && ventaIdActual) {
+      const payload = {
+        ventaId: ventaIdActual,
+        clienteId: clienteSnap?.id ?? null,
+        nombre: clienteSnap ? clienteSnap.nombre : nombreCliente.trim(),
+        telefono: telDigits,
+      };
+      startTransition(async () => {
+        await guardarClienteDesdeRecibo(payload);
+        router.refresh();
+      });
+    }
+    abrirWhatsAppRecibo(reciboData, telefono);
+    setReciboEnviado(true);
+  }
 
   function confirmar(metodo: MetodoPago, confirmado?: boolean) {
     setError('');
@@ -106,8 +143,10 @@ export function PaymentModal({
         return;
       }
       setNumeroVenta(res.numero);
+      setVentaIdActual(res.ventaId);
       setFuePendiente(metodo === 'breb' && !confirmado);
-      // Si el cliente tiene teléfono, prellenarlo para el recibo.
+      // Snapshot del cliente vinculado + prellenar teléfono para el recibo.
+      setClienteSnap(cliente ? { ...cliente } : null);
       if (cliente?.telefono) setTelefono(cliente.telefono);
       // Snapshot del recibo ANTES de limpiar el carrito.
       setReciboData({
@@ -350,10 +389,24 @@ export function PaymentModal({
 
             {/* Recibo por WhatsApp — sin API de Meta, abre wa.me en el celular */}
             {reciboData && (
-              <div className="space-y-2 rounded-2xl bg-secondary/50 p-3 text-left">
+              <div className="space-y-3 rounded-2xl bg-secondary/50 p-3 text-left">
                 <p className="text-center text-sm font-medium">
-                  ¿Enviar recibo al cliente?
+                  {clienteSnap
+                    ? `Enviar recibo a ${clienteSnap.nombre}`
+                    : '¿Enviar recibo al cliente?'}
                 </p>
+
+                {/* Nombre — solo si es cliente nuevo (no se eligió uno en el carrito) */}
+                {!clienteSnap && (
+                  <Input
+                    type="text"
+                    value={nombreCliente}
+                    onChange={(e) => setNombreCliente(e.target.value)}
+                    placeholder="Nombre del cliente (opcional)"
+                    className="h-11 w-full rounded-xl"
+                  />
+                )}
+
                 <div className="flex items-center gap-2">
                   <span className="shrink-0 text-sm text-muted-foreground">🇨🇴 +57</span>
                   <Input
@@ -365,17 +418,37 @@ export function PaymentModal({
                     className="h-11 flex-1 rounded-xl"
                   />
                 </div>
+
+                {/* Guardar cliente — aparece cuando hay algo nuevo que guardar */}
+                {puedeGuardarCliente && (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={guardarCli}
+                      onChange={(e) => setGuardarCli(e.target.checked)}
+                      className="h-4 w-4 rounded border-border"
+                    />
+                    <span>
+                      {clienteSnap
+                        ? 'Guardar este número en su ficha'
+                        : 'Guardar como cliente nuevo'}
+                    </span>
+                  </label>
+                )}
+
                 <Button
                   className="w-full rounded-2xl gap-2"
                   variant={reciboEnviado ? 'outline' : 'default'}
-                  onClick={() => {
-                    abrirWhatsAppRecibo(reciboData, telefono);
-                    setReciboEnviado(true);
-                  }}
-                  disabled={telefono.replace(/\D/g, '').length < 10}
+                  onClick={enviarRecibo}
+                  disabled={!telValido}
                 >
-                  📱 {reciboEnviado ? 'Abrir de nuevo' : 'Abrir WhatsApp con recibo'}
+                  📱 {reciboEnviado ? 'Abrir de nuevo' : 'Enviar recibo por WhatsApp'}
                 </Button>
+                {reciboEnviado && guardarCli && puedeGuardarCliente && (
+                  <p className="text-center text-xs text-[var(--ingreso)]">
+                    ✓ Cliente guardado
+                  </p>
+                )}
               </div>
             )}
 

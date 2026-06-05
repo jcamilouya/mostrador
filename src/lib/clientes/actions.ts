@@ -132,6 +132,79 @@ export async function actualizarCliente(
   return { ok: true, clienteId: id };
 }
 
+/**
+ * Flujo unificado desde la pantalla "venta registrada":
+ * - Si viene clienteId: guarda/actualiza su teléfono en la ficha.
+ * - Si NO viene clienteId pero sí nombre: crea el cliente, lo vincula a la
+ *   venta y le suma esa compra a sus acumulados.
+ * Devuelve el clienteId resultante.
+ */
+export async function guardarClienteDesdeRecibo(input: {
+  ventaId: string;
+  clienteId?: string | null;
+  nombre?: string;
+  telefono?: string;
+}): Promise<ClienteState> {
+  const empresaId = await getEmpresaIdValidado();
+  if (!empresaId) return { error: 'No autenticado' };
+
+  const telefono = (input.telefono ?? '').trim();
+  const admin = createAdminClient();
+
+  // Caso 1: cliente existente → solo guardamos su teléfono.
+  if (input.clienteId) {
+    if (telefono) {
+      await admin
+        .from('clientes')
+        .update({ telefono })
+        .eq('id', input.clienteId)
+        .eq('empresa_id', empresaId);
+    }
+    return { ok: true, clienteId: input.clienteId };
+  }
+
+  // Caso 2: cliente nuevo → crear, vincular a la venta y sumar la compra.
+  const nombre = (input.nombre ?? '').trim();
+  if (!nombre) return { error: 'Falta el nombre del cliente' };
+
+  // Leemos la venta para vincularla y conocer su total (validando empresa).
+  const { data: venta } = await admin
+    .from('ventas')
+    .select('id, total, estado, cliente_id')
+    .eq('id', input.ventaId)
+    .eq('empresa_id', empresaId)
+    .maybeSingle();
+  if (!venta) return { error: 'Venta no encontrada' };
+
+  const { data: nuevo, error: insErr } = await admin
+    .from('clientes')
+    .insert({
+      empresa_id: empresaId,
+      nombre,
+      telefono: telefono || null,
+      total_compras: venta.estado === 'completada' ? Number(venta.total) || 0 : 0,
+      cantidad_compras: venta.estado === 'completada' ? 1 : 0,
+      ultima_compra: venta.estado === 'completada' ? new Date().toISOString() : null,
+    })
+    .select('id')
+    .single();
+
+  if (insErr || !nuevo) return { error: 'No pudimos guardar el cliente.' };
+
+  // Vincular la venta al cliente recién creado (si no tenía uno).
+  if (!venta.cliente_id) {
+    await admin
+      .from('ventas')
+      .update({ cliente_id: nuevo.id })
+      .eq('id', input.ventaId)
+      .eq('empresa_id', empresaId);
+  }
+
+  revalidatePath('/dashboard/clientes');
+  revalidatePath('/dashboard/ingresos');
+  return { ok: true, clienteId: nuevo.id };
+}
+
 export async function eliminarCliente(id: string): Promise<void> {
   const empresaId = await getEmpresaIdValidado();
   if (!empresaId) return;
