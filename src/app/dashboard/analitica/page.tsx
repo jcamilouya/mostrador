@@ -151,10 +151,17 @@ function Delta({
   anterior: number;
   invertir?: boolean;
 }) {
-  if (anterior === 0 && actual === 0) {
-    return <p className="mt-1 text-xs text-muted-foreground">Sin datos del mes pasado</p>;
+  // No mostrar comparativo engañoso: en los primeros días del mes, o cuando
+  // alguno de los dos períodos no tiene datos, un porcentaje no significa nada.
+  const diasDelMes = new Date().getDate();
+  if (diasDelMes <= 5 || anterior === 0 || actual === 0) {
+    return (
+      <span className="mt-1 inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
+        Primer período
+      </span>
+    );
   }
-  const pct = anterior === 0 ? 100 : ((actual - anterior) / Math.abs(anterior)) * 100;
+  const pct = ((actual - anterior) / Math.abs(anterior)) * 100;
   const subio = pct > 0;
   const plano = Math.abs(pct) < 0.5;
   // Para gastos, subir es "malo": invertimos el color.

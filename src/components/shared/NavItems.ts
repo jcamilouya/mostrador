@@ -6,6 +6,7 @@ import {
   Receipt,
   BarChart3,
   FileText,
+  Users,
   Sparkles,
   Settings,
 } from 'lucide-react';
@@ -22,6 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/inventario', label: 'Productos', icon: Package },
   { href: '/dashboard/ingresos', label: 'Ingresos', icon: TrendingUp },
   { href: '/dashboard/egresos', label: 'Gastos', icon: Receipt },
+  { href: '/dashboard/clientes', label: 'Clientes', icon: Users },
   { href: '/dashboard/analitica', label: 'Analítica', icon: BarChart3 },
   { href: '/dashboard/reportes', label: 'Reportes', icon: FileText },
   { href: '/dashboard/plan', label: 'Plan', icon: Sparkles },
@@ -40,6 +42,7 @@ export const BOTTOM_PRIMARY: NavItem[] = [
 export const MORE_ITEMS: NavItem[] = [
   { href: '/dashboard/inventario', label: 'Productos', icon: Package },
   { href: '/dashboard/ingresos', label: 'Ingresos', icon: TrendingUp },
+  { href: '/dashboard/clientes', label: 'Clientes', icon: Users },
   { href: '/dashboard/reportes', label: 'Reportes', icon: FileText },
   { href: '/dashboard/plan', label: 'Plan', icon: Sparkles },
   { href: '/dashboard/configuracion', label: 'Ajustes', icon: Settings },

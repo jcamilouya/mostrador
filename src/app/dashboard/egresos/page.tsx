@@ -5,7 +5,7 @@ import { Plus, TrendingDown, Receipt, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ExpenseList } from '@/components/expenses/ExpenseList';
 import { getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
-import { getEgresos, getEgresosStats } from '@/lib/egresos/queries';
+import { getEgresosPaginados, getEgresosStats, type RangoEgresos } from '@/lib/egresos/queries';
 import { CATEGORIA_INFO } from '@/lib/egresos/schemas';
 import { formatCOP } from '@/lib/utils/format';
 
@@ -13,12 +13,24 @@ export const metadata: Metadata = {
   title: 'Gastos — Mostrador',
 };
 
-export default async function EgresosPage() {
+const RANGOS_VALIDOS: RangoEgresos[] = ['7d', '30d', 'mes'];
+
+export default async function EgresosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ rango?: string; page?: string }>;
+}) {
   const empresaId = await getEmpresaIdDelUsuario();
   if (!empresaId) redirect('/onboarding');
 
-  const [egresos, stats] = await Promise.all([
-    getEgresos(empresaId),
+  const sp = await searchParams;
+  const rango = RANGOS_VALIDOS.includes(sp.rango as RangoEgresos)
+    ? (sp.rango as RangoEgresos)
+    : '30d';
+  const page = Math.max(1, Number(sp.page) || 1);
+
+  const [pagina, stats] = await Promise.all([
+    getEgresosPaginados(empresaId, { rango, page }),
     getEgresosStats(empresaId),
   ]);
 
@@ -67,7 +79,13 @@ export default async function EgresosPage() {
         />
       </section>
 
-      <ExpenseList egresos={egresos} />
+      <ExpenseList
+        egresos={pagina.rows}
+        rango={pagina.rango}
+        page={pagina.page}
+        totalPaginas={pagina.totalPaginas}
+        totalRegistros={pagina.totalRegistros}
+      />
     </div>
   );
 }

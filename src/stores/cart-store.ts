@@ -3,11 +3,15 @@
 import { create } from 'zustand';
 import type { CartItem } from '@/lib/pos/types';
 
+type ClienteSel = { id: string; nombre: string; telefono: string | null };
+
 type CartState = {
   items: CartItem[];
+  cliente: ClienteSel | null;
   add: (item: Omit<CartItem, 'cantidad'>) => void;
   setCantidad: (productoId: string, cantidad: number) => void;
   remove: (productoId: string) => void;
+  setCliente: (cliente: ClienteSel | null) => void;
   clear: () => void;
   total: () => number;
   totalItems: () => number;
@@ -15,6 +19,7 @@ type CartState = {
 
 export const useCart = create<CartState>((set, get) => ({
   items: [],
+  cliente: null,
   add: (item) =>
     set((state) => {
       const existing = state.items.find((i) => i.producto_id === item.producto_id);
@@ -44,7 +49,8 @@ export const useCart = create<CartState>((set, get) => ({
     }),
   remove: (productoId) =>
     set((state) => ({ items: state.items.filter((i) => i.producto_id !== productoId) })),
-  clear: () => set({ items: [] }),
+  setCliente: (cliente) => set({ cliente }),
+  clear: () => set({ items: [], cliente: null }),
   total: () => get().items.reduce((acc, i) => acc + i.cantidad * i.precio_venta, 0),
   totalItems: () => get().items.reduce((acc, i) => acc + i.cantidad, 0),
 }));

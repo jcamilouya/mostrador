@@ -44,7 +44,7 @@ export function RevenueChart({ serie }: { serie: PuntoBalance[] }) {
           Cuando empieces a vender y registrar gastos, vas a ver aquí tu tendencia.
         </p>
       ) : (
-        <div className="h-64 w-full">
+        <div className="h-64 w-full min-w-0">
           {montado && (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={serie} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>

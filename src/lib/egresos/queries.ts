@@ -28,6 +28,66 @@ export async function getEgresos(empresaId: string, limit = 50): Promise<Egreso[
   return data.map((e) => ({ ...e, monto: Number(e.monto) })) as Egreso[];
 }
 
+export type RangoEgresos = '7d' | '30d' | 'mes';
+
+export type EgresosPagina = {
+  rows: Egreso[];
+  rango: RangoEgresos;
+  page: number;
+  pageSize: number;
+  totalRegistros: number;
+  totalPaginas: number;
+};
+
+export const PAGE_SIZE_EGRESOS = 20;
+
+function desdePorRangoEgresos(rango: RangoEgresos): string {
+  const ahora = new Date();
+  if (rango === 'mes') {
+    return new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString().slice(0, 10);
+  }
+  const dias = rango === '7d' ? 7 : 30;
+  const d = new Date(ahora);
+  d.setDate(d.getDate() - dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Gastos paginados (server-side) filtrados por rango de fecha. */
+export async function getEgresosPaginados(
+  empresaId: string,
+  opts: { rango?: RangoEgresos; page?: number } = {},
+): Promise<EgresosPagina> {
+  const rango = opts.rango ?? '30d';
+  const page = Math.max(1, opts.page ?? 1);
+  const pageSize = PAGE_SIZE_EGRESOS;
+  const desde = desdePorRangoEgresos(rango);
+
+  const supabase = await createClient();
+  const { data, count } = await supabase
+    .from('egresos')
+    .select(
+      'id, categoria, proveedor, descripcion, monto, fecha, metodo_pago, comprobante_url, fuente, recurrente, created_at',
+      { count: 'exact' },
+    )
+    .eq('empresa_id', empresaId)
+    .gte('fecha', desde)
+    .order('fecha', { ascending: false })
+    .order('created_at', { ascending: false })
+    .range((page - 1) * pageSize, page * pageSize - 1);
+
+  const rows = (data ?? []).map((e) => ({ ...e, monto: Number(e.monto) })) as Egreso[];
+  const totalRegistros = count ?? rows.length;
+
+  return {
+    rows,
+    rango,
+    page,
+    pageSize,
+    totalRegistros,
+    totalPaginas: Math.max(1, Math.ceil(totalRegistros / pageSize)),
+  };
+}
+
 export async function getEgreso(empresaId: string, id: string): Promise<Egreso | null> {
   const supabase = await createClient();
   const { data } = await supabase

@@ -23,6 +23,8 @@ const ventaSchema = z.object({
   confirmado: z.boolean().optional(),
   // ID del QR generado por Bancolombia — para conciliar con el webhook de pago.
   breb_transaccion_id: z.string().max(120).optional(),
+  // Cliente OPCIONAL: una venta nunca se bloquea por no tener cliente.
+  cliente_id: z.uuid().optional().nullable(),
 });
 
 export async function registrarVenta(input: unknown): Promise<VentaResult> {
@@ -64,20 +66,24 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
   // Bre-B queda pendiente salvo que el dueño confirme el pago en el momento.
   const pendiente = parsed.data.metodo_pago === 'breb' && !parsed.data.confirmado;
 
-  // Insertar venta
+  // Insertar venta. Solo incluimos cliente_id si viene uno, para no depender
+  // de que la columna exista (migración de clientes) en el resto de ventas.
+  const ventaInsert: Record<string, unknown> = {
+    empresa_id: empresaId,
+    subtotal,
+    iva: 0,
+    total,
+    metodo_pago: parsed.data.metodo_pago,
+    estado: pendiente ? 'pendiente' : 'completada',
+    breb_transaccion_id: parsed.data.breb_transaccion_id ?? null,
+    breb_estado: pendiente ? 'pendiente' : null,
+    notas: parsed.data.notas ?? null,
+  };
+  if (parsed.data.cliente_id) ventaInsert.cliente_id = parsed.data.cliente_id;
+
   const { data: venta, error: ventaErr } = await admin
     .from('ventas')
-    .insert({
-      empresa_id: empresaId,
-      subtotal,
-      iva: 0,
-      total,
-      metodo_pago: parsed.data.metodo_pago,
-      estado: pendiente ? 'pendiente' : 'completada',
-      breb_transaccion_id: parsed.data.breb_transaccion_id ?? null,
-      breb_estado: pendiente ? 'pendiente' : null,
-      notas: parsed.data.notas ?? null,
-    })
+    .insert(ventaInsert)
     .select('id, numero_venta, total')
     .single();
 
@@ -130,9 +136,31 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
     }
   }
 
+  // Acumular compras del cliente (si se asoció uno y la venta quedó completada).
+  if (parsed.data.cliente_id && !pendiente) {
+    const { data: cli } = await admin
+      .from('clientes')
+      .select('total_compras, cantidad_compras')
+      .eq('id', parsed.data.cliente_id)
+      .eq('empresa_id', empresaId)
+      .maybeSingle();
+    if (cli) {
+      await admin
+        .from('clientes')
+        .update({
+          total_compras: (Number(cli.total_compras) || 0) + total,
+          cantidad_compras: (Number(cli.cantidad_compras) || 0) + 1,
+          ultima_compra: new Date().toISOString(),
+        })
+        .eq('id', parsed.data.cliente_id)
+        .eq('empresa_id', empresaId);
+    }
+  }
+
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/pos');
   revalidatePath('/dashboard/inventario');
+  revalidatePath('/dashboard/clientes');
 
   return {
     ok: true,

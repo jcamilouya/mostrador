@@ -17,6 +17,7 @@ import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
 import { registrarVenta } from '@/lib/pos/actions';
 import { generarQRPago } from '@/lib/breb/qr-action';
+import { abrirWhatsAppRecibo, type ReciboData } from '@/lib/recibo';
 import type { MetodoPago } from '@/lib/pos/types';
 import type { BrebConfig } from '@/lib/breb/queries';
 import { BrebQR } from '@/components/breb/BrebQR';
@@ -37,6 +38,7 @@ export function PaymentModal({
   const router = useRouter();
   const items = useCart((s) => s.items);
   const total = useCart((s) => s.total());
+  const cliente = useCart((s) => s.cliente);
   const clear = useCart((s) => s.clear);
 
   const [step, setStep] = useState<Step>('metodo');
@@ -44,6 +46,9 @@ export function PaymentModal({
   const [error, setError] = useState<string>('');
   const [numeroVenta, setNumeroVenta] = useState<number | null>(null);
   const [fuePendiente, setFuePendiente] = useState(false);
+  const [reciboData, setReciboData] = useState<ReciboData | null>(null);
+  const [telefono, setTelefono] = useState('');
+  const [reciboEnviado, setReciboEnviado] = useState(false);
   const [pending, startTransition] = useTransition();
   const [qrPayload, setQrPayload] = useState<string | null>(null);
   const [qrId, setQrId] = useState<string | null>(null);
@@ -56,6 +61,9 @@ export function PaymentModal({
       setError('');
       setNumeroVenta(null);
       setFuePendiente(false);
+      setReciboData(null);
+      setTelefono('');
+      setReciboEnviado(false);
       setQrPayload(null);
       setQrId(null);
     }
@@ -83,6 +91,7 @@ export function PaymentModal({
         metodo_pago: metodo,
         confirmado,
         breb_transaccion_id: metodo === 'breb' && qrId ? qrId : undefined,
+        cliente_id: cliente?.id ?? null,
         items: items.map((i) => ({
           producto_id: i.producto_id,
           cantidad: i.cantidad,
@@ -98,6 +107,20 @@ export function PaymentModal({
       }
       setNumeroVenta(res.numero);
       setFuePendiente(metodo === 'breb' && !confirmado);
+      // Si el cliente tiene teléfono, prellenarlo para el recibo.
+      if (cliente?.telefono) setTelefono(cliente.telefono);
+      // Snapshot del recibo ANTES de limpiar el carrito.
+      setReciboData({
+        negocio: breb.nombreNegocio,
+        created_at: new Date().toISOString(),
+        metodo_pago: metodo,
+        total: res.total,
+        items: items.map((i) => ({
+          nombre_producto: i.nombre,
+          cantidad: i.cantidad,
+          subtotal: i.cantidad * i.precio_venta,
+        })),
+      });
       setStep('exito');
       clear();
       router.refresh();
@@ -316,18 +339,53 @@ export function PaymentModal({
                 }`}
               />
             </div>
-            <p className="text-2xl font-semibold tabular-nums">{formatCOP(total)}</p>
+            <p className="text-2xl font-semibold tabular-nums">
+              {reciboData ? formatCOP(reciboData.total) : formatCOP(total)}
+            </p>
             <p className="text-sm text-muted-foreground">
               {fuePendiente
                 ? `Venta #${numeroVenta} quedó pendiente. Confírmala desde "Ventas de hoy" cuando recibas el pago.`
                 : `Venta #${numeroVenta} guardada. ¡Sigue así! 💪`}
             </p>
+
+            {/* Recibo por WhatsApp — sin API de Meta, abre wa.me en el celular */}
+            {reciboData && (
+              <div className="space-y-2 rounded-2xl bg-secondary/50 p-3 text-left">
+                <p className="text-center text-sm font-medium">
+                  ¿Enviar recibo al cliente?
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 text-sm text-muted-foreground">🇨🇴 +57</span>
+                  <Input
+                    type="tel"
+                    inputMode="numeric"
+                    value={telefono}
+                    onChange={(e) => setTelefono(e.target.value)}
+                    placeholder="310 555 1234"
+                    className="h-11 flex-1 rounded-xl"
+                  />
+                </div>
+                <Button
+                  className="w-full rounded-2xl gap-2"
+                  variant={reciboEnviado ? 'outline' : 'default'}
+                  onClick={() => {
+                    abrirWhatsAppRecibo(reciboData, telefono);
+                    setReciboEnviado(true);
+                  }}
+                  disabled={telefono.replace(/\D/g, '').length < 10}
+                >
+                  📱 {reciboEnviado ? 'Abrir de nuevo' : 'Abrir WhatsApp con recibo'}
+                </Button>
+              </div>
+            )}
+
             <Button
               size="lg"
+              variant={reciboData && !reciboEnviado ? 'outline' : 'default'}
               className="w-full rounded-2xl h-12"
               onClick={onSuccess}
             >
-              Hacer otra venta
+              {reciboData && !reciboEnviado ? 'Omitir, no enviar recibo' : 'Hacer otra venta'}
             </Button>
           </div>
         )}

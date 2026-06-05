@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
 import { PaymentModal } from './PaymentModal';
+import { ClienteSearch } from './ClienteSearch';
 import type { BrebConfig } from '@/lib/breb/queries';
 
 export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
@@ -104,6 +105,7 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
           className="shrink-0 space-y-3 border-t px-4 pt-4"
           style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom, 1.25rem))' }}
         >
+          {!empty && <ClienteSearch />}
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Total</span>
             <span className="text-3xl font-bold tabular-nums">{formatCOP(total)}</span>
