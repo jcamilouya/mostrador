@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useRef, useState, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -39,11 +39,11 @@ function SubmitButton({ creando }: { creando: boolean }) {
   );
 }
 
-function CatSubmitButton() {
-  const { pending } = useFormStatus();
+function CatSubmitButton({ pending, onClick }: { pending: boolean; onClick: () => void }) {
   return (
     <button
-      type="submit"
+      type="button"
+      onClick={onClick}
       disabled={pending}
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background disabled:opacity-50"
     >
@@ -68,7 +68,6 @@ export function ProductForm({
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(action, {});
-  const [catState, catAction] = useActionState(crearCategoria, {});
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(producto?.imagen_url ?? null);
   const [quitarImagen, setQuitarImagen] = useState(false);
@@ -76,14 +75,32 @@ export function ProductForm({
 
   const [mostrarNuevaCat, setMostrarNuevaCat] = useState(false);
   const [colorCat, setColorCat] = useState('#6366f1');
+  const [nombreCat, setNombreCat] = useState('');
+  const [catState, setCatState] = useState<ActionState>({});
+  const [catPending, startCat] = useTransition();
 
-  useEffect(() => {
-    if (catState.ok) {
-      router.refresh();
-      setMostrarNuevaCat(false);
-      setColorCat('#6366f1');
+  // La creación de categoría NO usa un <form> anidado (HTML inválido):
+  // dispara la Server Action directamente con useTransition.
+  function handleCrearCategoria() {
+    const nombre = nombreCat.trim();
+    if (nombre.length < 2) {
+      setCatState({ error: 'El nombre es muy corto' });
+      return;
     }
-  }, [catState.ok, router]);
+    const fd = new FormData();
+    fd.set('nombre', nombre);
+    fd.set('color', colorCat);
+    startCat(async () => {
+      const res = await crearCategoria({}, fd);
+      setCatState(res);
+      if (res.ok) {
+        setNombreCat('');
+        setColorCat('#6366f1');
+        setMostrarNuevaCat(false);
+        router.refresh();
+      }
+    });
+  }
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -229,22 +246,25 @@ export function ProductForm({
                 </SelectContent>
               </Select>
 
-              {/* Panel inline para crear categoría */}
+              {/* Panel inline para crear categoría (sin <form> anidado) */}
               {mostrarNuevaCat && (
-                <form
-                  action={catAction}
-                  className="rounded-2xl border bg-secondary/40 p-4 space-y-3"
-                >
+                <div className="rounded-2xl border bg-secondary/40 p-4 space-y-3">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Nueva categoría</p>
                   <div className="flex gap-2">
                     <Input
-                      name="nombre"
+                      value={nombreCat}
+                      onChange={(e) => setNombreCat(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCrearCategoria();
+                        }
+                      }}
                       placeholder="Ej: Bebidas, Snacks…"
-                      required
                       className="rounded-xl h-9 text-sm flex-1"
                       autoFocus
                     />
-                    <CatSubmitButton />
+                    <CatSubmitButton pending={catPending} onClick={handleCrearCategoria} />
                   </div>
                   <div className="space-y-1.5">
                     <p className="text-xs text-muted-foreground">Color</p>
@@ -270,12 +290,11 @@ export function ProductForm({
                         title="Color personalizado"
                       />
                     </div>
-                    <input type="hidden" name="color" value={colorCat} />
                   </div>
                   {catState.error && (
                     <p className="text-xs text-destructive">{catState.error}</p>
                   )}
-                </form>
+                </div>
               )}
             </div>
 
