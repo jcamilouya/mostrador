@@ -2,7 +2,6 @@
 
 import { useActionState, useRef, useState, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,6 +56,42 @@ const COLORES_RAPIDOS = [
   '#ef4444', '#ec4899', '#8b5cf6', '#64748b',
 ];
 
+/**
+ * Comprime/redimensiona una imagen en el navegador antes de subirla.
+ * Evita que una foto de celular (varios MB) supere el límite de los Server
+ * Actions y haga fallar el guardado. Si algo falla, devuelve el archivo original.
+ */
+async function comprimirImagen(file: File, maxDim = 1280, calidad = 0.8): Promise<File> {
+  if (!file.type.startsWith('image/')) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    let { width, height } = bitmap;
+    if (width > maxDim || height > maxDim) {
+      if (width >= height) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', calidad),
+    );
+    if (!blob) return file;
+    const base = file.name.replace(/\.[^.]+$/, '') || 'foto';
+    return new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
 export function ProductForm({
   action,
   categorias,
@@ -66,7 +101,6 @@ export function ProductForm({
   categorias: Categoria[];
   producto?: Producto;
 }) {
-  const router = useRouter();
   const [state, formAction] = useActionState(action, {});
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(producto?.imagen_url ?? null);
@@ -78,6 +112,11 @@ export function ProductForm({
   const [nombreCat, setNombreCat] = useState('');
   const [catState, setCatState] = useState<ActionState>({});
   const [catPending, startCat] = useTransition();
+
+  // Lista local de categorías para que la nueva aparezca al instante,
+  // sin depender de un refresh del servidor.
+  const [cats, setCats] = useState<Categoria[]>(categorias);
+  const [categoriaId, setCategoriaId] = useState<string>(producto?.categoria_id ?? '');
 
   // La creación de categoría NO usa un <form> anidado (HTML inválido):
   // dispara la Server Action directamente con useTransition.
@@ -92,21 +131,36 @@ export function ProductForm({
     fd.set('color', colorCat);
     startCat(async () => {
       const res = await crearCategoria({}, fd);
-      setCatState(res);
-      if (res.ok) {
+      if (res.ok && res.categoria) {
+        setCats((prev) =>
+          [...prev, res.categoria!].sort((a, b) => a.nombre.localeCompare(b.nombre)),
+        );
+        setCategoriaId(res.categoria.id);
         setNombreCat('');
         setColorCat('#6366f1');
         setMostrarNuevaCat(false);
-        router.refresh();
+        setCatState({ ok: true });
+      } else {
+        setCatState(res);
       }
     });
   }
 
-  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setQuitarImagen(false);
-    setPreviewUrl(URL.createObjectURL(file));
+    const comprimida = await comprimirImagen(file);
+    // Reemplaza el archivo del input por la versión comprimida para que el
+    // formulario envíe esa (más liviana) y no falle por tamaño.
+    try {
+      const dt = new DataTransfer();
+      dt.items.add(comprimida);
+      if (fileInputRef.current) fileInputRef.current.files = dt.files;
+    } catch {
+      // Algunos navegadores no permiten asignar files; el original se enviará.
+    }
+    setPreviewUrl(URL.createObjectURL(comprimida));
   }
 
   function handleQuitarImagen() {
@@ -227,12 +281,16 @@ export function ProductForm({
                 </button>
               </div>
 
-              <Select name="categoria_id" defaultValue={producto?.categoria_id ?? undefined}>
+              <Select
+                name="categoria_id"
+                value={categoriaId || undefined}
+                onValueChange={(v) => setCategoriaId(v ?? '')}
+              >
                 <SelectTrigger className="rounded-xl h-11" id="categoria_id">
-                  <SelectValue placeholder={categorias.length === 0 ? 'Crea una categoría primero →' : 'Elige una categoría'} />
+                  <SelectValue placeholder={cats.length === 0 ? 'Crea una categoría primero →' : 'Elige una categoría'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {categorias.map((c) => (
+                  {cats.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       <span className="inline-flex items-center gap-2">
                         <span

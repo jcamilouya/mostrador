@@ -178,10 +178,12 @@ export async function eliminarProducto(id: string): Promise<void> {
   revalidatePath('/dashboard/inventario');
 }
 
+export type CategoriaCreada = { id: string; nombre: string; color: string };
+
 export async function crearCategoria(
   _prev: ActionState,
   formData: FormData,
-): Promise<ActionState> {
+): Promise<ActionState & { categoria?: CategoriaCreada }> {
   const session = await requireEmpresaId();
   if (!session) redirect('/login');
 
@@ -189,17 +191,24 @@ export async function crearCategoria(
     nombre: formData.get('nombre'),
     color: formData.get('color') || '#6366f1',
   });
-  if (!parsed.success) return { error: 'Nombre inválido' };
+  if (!parsed.success) return { error: 'El nombre es muy corto' };
 
   const admin = createAdminClient();
-  const { error } = await admin.from('categorias').insert({
-    empresa_id: session.empresaId,
-    nombre: parsed.data.nombre,
-    color: parsed.data.color,
-  });
-  if (error) return { error: 'No pudimos crear la categoría.' };
+  const { data, error } = await admin
+    .from('categorias')
+    .insert({
+      empresa_id: session.empresaId,
+      nombre: parsed.data.nombre,
+      color: parsed.data.color,
+    })
+    .select('id, nombre, color')
+    .single();
+  if (error || !data) return { error: 'No pudimos crear la categoría.' };
 
   revalidatePath('/dashboard/inventario');
   revalidatePath('/dashboard/inventario/nuevo');
-  return { ok: true };
+  return {
+    ok: true,
+    categoria: { id: data.id as string, nombre: data.nombre as string, color: data.color as string },
+  };
 }

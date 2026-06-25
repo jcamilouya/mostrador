@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Store } from 'lucide-react';
+import { Store, ShieldCheck } from 'lucide-react';
 import { NAV_ITEMS } from './NavItems';
 import { SignOutButton } from './SignOutButton';
 import { ThemeToggle } from './ThemeToggle';
 
-export function Sidebar({ negocio }: { negocio: string }) {
+export function Sidebar({ negocio, esAdmin }: { negocio: string; esAdmin?: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -48,6 +48,19 @@ export function Sidebar({ negocio }: { negocio: string }) {
       </nav>
 
       <div className="mt-4 flex flex-col gap-1 border-t pt-4">
+        {esAdmin && (
+          <Link
+            href="/admin"
+            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+              pathname.startsWith('/admin')
+                ? 'bg-foreground text-background'
+                : 'text-[var(--utilidad)] hover:bg-[var(--utilidad)]/10'
+            }`}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Panel Admin
+          </Link>
+        )}
         <ThemeToggle className="w-full justify-start" />
         <SignOutButton />
       </div>

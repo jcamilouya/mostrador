@@ -3,12 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { MoreHorizontal, X } from 'lucide-react';
+import { MoreHorizontal, X, ShieldCheck } from 'lucide-react';
 import { BOTTOM_PRIMARY, MORE_ITEMS } from './NavItems';
 import { SignOutButton } from './SignOutButton';
 import { ThemeToggle } from './ThemeToggle';
 
-export function BottomNav() {
+export function BottomNav({ esAdmin }: { esAdmin?: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -95,6 +95,16 @@ export function BottomNav() {
             </div>
 
             <div className="mt-2 flex flex-col gap-1 border-t pt-2">
+              {esAdmin && (
+                <Link
+                  href="/admin"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-[var(--utilidad)] hover:bg-[var(--utilidad)]/10"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  Panel Admin
+                </Link>
+              )}
               <ThemeToggle className="w-full justify-start" />
               <SignOutButton />
             </div>
