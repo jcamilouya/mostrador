@@ -2,11 +2,10 @@
  * Constructor de payload EMVCo (Merchant Presented Mode), el estándar de QR
  * de pago que usa Bre-B en Colombia. Genera la cadena que se codifica en el QR.
  *
- * OJO: el identificador de dominio (GUI) y el "merchant account information"
- * exactos los asigna ACH Colombia / tu banco al registrar tu llave Bre-B.
- * Aquí usamos la llave como identificador y un GUI configurable; valida con tu
- * banco antes de cobrar en producción. La estructura TLV y el CRC sí son
- * estándar EMVCo y escaneables.
+ * El formato (tag 30 con GUI "co.com.bre-b" + la llave) está calcado de un QR
+ * Bre-B real de Bancolombia, por lo que cualquier banco que soporte Bre-B
+ * debería poder leerlo. Cada comercio usa SU propia llave Bre-B (la que
+ * registró con su banco: celular, correo, NIT o código @).
  */
 
 // Codifica un campo TLV: id (2) + longitud (2, con cero a la izquierda) + valor.
@@ -49,7 +48,8 @@ export type BrebQRInput = {
   gui?: string;
 };
 
-const GUI_BREB_DEFECTO = 'CO.COM.BRE-B';
+const GUI_BREB_DEFECTO = 'co.com.bre-b';
+const CODIGO_BREB = '00000000000000'; // subcampo 01 (reservado) observado en QR Bre-B reales
 const MCC_GENERAL = '0000';
 const MONEDA_COP = '170'; // ISO 4217
 const PAIS_CO = 'CO';
@@ -58,15 +58,21 @@ export function construirPayloadBreb(input: BrebQRInput): string {
   const { llave, nombre, ciudad, monto, referencia } = input;
   const gui = input.gui?.trim() || GUI_BREB_DEFECTO;
 
-  // Merchant Account Information (tag 26): subcampos GUI (00) + llave (01).
-  const merchantAccount = tlv('00', limpiar(gui, 32)) + tlv('01', limpiar(llave, 99));
+  // Merchant Account Information de Bre-B (tag 30), calcado de un QR real:
+  //   00 = GUI del dominio Bre-B (co.com.bre-b, en minúsculas)
+  //   01 = código reservado (14 dígitos)
+  //   02 = la llave Bre-B del comercio
+  const merchantAccount =
+    tlv('00', limpiar(gui, 32)) +
+    tlv('01', CODIGO_BREB) +
+    tlv('02', limpiar(llave, 99));
 
   const estatico = monto === undefined || monto <= 0;
 
   let payload =
     tlv('00', '01') + // Payload Format Indicator
     tlv('01', estatico ? '11' : '12') + // 11 estático, 12 dinámico (un solo uso)
-    tlv('26', merchantAccount) +
+    tlv('30', merchantAccount) +
     tlv('52', MCC_GENERAL) +
     tlv('53', MONEDA_COP);
 

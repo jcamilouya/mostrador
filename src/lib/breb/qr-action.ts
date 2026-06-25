@@ -36,8 +36,15 @@ export async function generarQRPago(
 
   const ref = referencia ?? `mostrador-${Date.now()}`;
 
-  // Intentar la API de Bancolombia si las credenciales están configuradas
-  if (process.env.BANCOLOMBIA_CLIENT_ID && process.env.BANCOLOMBIA_CLIENT_SECRET) {
+  // Intentar la API de Bancolombia solo si hay credenciales Y NO es sandbox.
+  // En sandbox la API devuelve QR de prueba que ningún banco puede pagar de
+  // verdad; mientras no haya acceso de producción, usamos el QR EMV local.
+  const bancolombiaProd =
+    Boolean(process.env.BANCOLOMBIA_CLIENT_ID) &&
+    Boolean(process.env.BANCOLOMBIA_CLIENT_SECRET) &&
+    !(process.env.BANCOLOMBIA_BASE_URL ?? '').includes('sandbox');
+
+  if (bancolombiaProd) {
     try {
       const result = await crearCobroQR({
         monto,
