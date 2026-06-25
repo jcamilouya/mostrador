@@ -15,6 +15,7 @@ import { getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
 import { getDashboardStats } from '@/lib/dashboard/queries';
 import { getBalanceDiario } from '@/lib/analitica/queries';
 import { RevenueChart } from '@/components/dashboard/RevenueChart';
+import { WelcomeGuide } from '@/components/dashboard/WelcomeGuide';
 import { formatCOP } from '@/lib/utils/format';
 
 export const metadata: Metadata = {
@@ -50,6 +51,8 @@ export default async function DashboardHome() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
+      <WelcomeGuide />
+
       <header className="space-y-1">
         <p className="text-sm text-muted-foreground">{saludo},</p>
         <h1 className="text-3xl font-semibold tracking-tight">{nombre} 👋</h1>

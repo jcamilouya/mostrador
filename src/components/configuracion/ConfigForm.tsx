@@ -138,13 +138,27 @@ export function ConfigForm({
               />
             </div>
 
-            <div className="flex items-start gap-2 rounded-2xl bg-secondary/60 p-3 text-xs text-muted-foreground">
-              <Info className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>
-                El QR usa el estándar EMVCo. El identificador oficial de Bre-B lo asigna tu
-                banco al registrar tu llave — verifícalo con un cobro de prueba antes de
-                usarlo con clientes.
-              </span>
+            <div className="space-y-2 rounded-2xl bg-secondary/60 p-3 text-xs text-muted-foreground">
+              <p className="flex items-center gap-2 font-medium text-foreground">
+                <Info className="h-4 w-4 shrink-0" /> ¿Cómo activar tus cobros Bre-B?
+              </p>
+              <p>
+                <strong className="text-foreground">1.</strong> Registra tu llave Bre-B en la
+                app de tu banco (sección “Bre-B” o “Llaves”). Tu llave puede ser tu celular,
+                correo, NIT o un código tipo <span className="font-mono">@tunegocio</span>.
+              </p>
+              <p>
+                <strong className="text-foreground">2.</strong> Escribe esa <strong>misma</strong>{' '}
+                llave aquí arriba y guarda.
+              </p>
+              <p>
+                <strong className="text-foreground">3.</strong> Listo: al cobrar con Bre-B en el
+                POS se genera un QR que <strong>cualquier banco</strong> puede pagar, y la plata
+                llega a tu cuenta.
+              </p>
+              <p className="text-[var(--utilidad)]">
+                💡 Haz una primera prueba con un pago pequeño desde otro banco para confirmar.
+              </p>
             </div>
           </div>
 
