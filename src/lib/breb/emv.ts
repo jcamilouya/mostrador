@@ -49,7 +49,10 @@ export type BrebQRInput = {
 };
 
 const GUI_BREB_DEFECTO = 'co.com.bre-b';
-const CODIGO_BREB = '00000000000000'; // subcampo 01 (reservado) observado en QR Bre-B reales
+// Subcampo 01 (reservado): 20 dígitos. Deducido de QR Bre-B reales de Bancolombia,
+// donde el template (tag 30) mide 54 con una llave de 10 caracteres
+// (16 del GUI + 24 de este campo + 14 de la llave = 54).
+const CODIGO_BREB = '00000000000000000000';
 const MCC_GENERAL = '0000';
 const MONEDA_COP = '170'; // ISO 4217
 const PAIS_CO = 'CO';
