@@ -1,89 +1,119 @@
 /**
- * Cliente para la API de Cobros QR de Bancolombia.
+ * Cliente server-side de la API "QR Code Information" de Bancolombia.
  *
- * Autenticación: OAuth2 client_credentials (token expira en ~1200s / 20 min).
- * Endpoint QR: configurado en BANCOLOMBIA_QR_PATH — verificar con la documentación
- * oficial del portal de Bancolombia cuando aprueben el acceso a la API.
+ * ⚠️ ESTADO: LISTO PARA PRODUCCIÓN, INACTIVO POR AHORA.
+ *  - En sandbox la API devuelve un QR de DEMOSTRACIÓN (no pagable) y, además, el
+ *    gateway de Bancolombia (WAF Incapsula) bloquea llamadas que no vengan de un
+ *    servidor autorizado. Se activa cuando Bancolombia habilite PRODUCCIÓN y
+ *    autorice este servidor.
+ *  - Solo aplica a comercios con cuenta Bancolombia (la API entrega el QR de una
+ *    llave registrada en Bancolombia). Para los demás bancos, el negocio sube su
+ *    QR oficial en Configuración (ver ConfigForm + columna empresas.breb_qr_payload).
+ *
+ * Contrato real (verificado con el swagger oficial qr-code-information-qr-codes v1.0.0):
+ *   POST {BASE}/qr-code-image
+ *   Headers: client-id, client-secret, message-id (UUID), Content-Type, Accept
+ *   Body:   { data: { holder?, qrInformation: { key: { type, value } }, fileFormat } }
+ *   Resp:   { data: { qrImage: "<base64 SVG|PNG|PDF>" } }
  *
  * Solo server-side. Nunca importar desde Client Components.
  */
+import https from 'node:https';
+import { readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
-const BASE_URL = () => process.env.BANCOLOMBIA_BASE_URL ?? 'https://sandbox.apis.bancolombia.com';
+const SANDBOX_BASE =
+  'https://gw-sandbox-qa.apps.ambientesbc.com/public-partner/sb/v1/sales-service/customer-management/customer-product-and-service-directory/qr-code-information/qr-codes';
 
-async function getAccessToken(): Promise<string> {
-  const id = process.env.BANCOLOMBIA_CLIENT_ID;
-  const secret = process.env.BANCOLOMBIA_CLIENT_SECRET;
-  if (!id || !secret) throw new Error('Bancolombia: credenciales no configuradas');
-
-  const creds = Buffer.from(`${id}:${secret}`).toString('base64');
-
-  const res = await fetch(`${BASE_URL()}/security/oauth-provider/oauth2/token`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${creds}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/vnd.bancolombia.v4+json',
-    },
-    body: new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
-    // Desactivar caché: cada deploy serverless necesita su propio token
-    cache: 'no-store',
-  });
-
-  if (!res.ok) {
-    const texto = await res.text().catch(() => '');
-    throw new Error(`Bancolombia OAuth ${res.status}: ${texto}`);
-  }
-
-  const data = await res.json() as { access_token: string; token_type: string };
-  return `${data.token_type} ${data.access_token}`;
+function baseUrl(): string {
+  return process.env.BANCOLOMBIA_QR_BASE_URL ?? SANDBOX_BASE;
 }
 
-export type CobroQRInput = {
-  monto: number;
-  referencia: string;
-  nombreComercio?: string;
-  descripcion?: string;
+/**
+ * Certificado de cliente (mTLS). La API lo exige en producción
+ * (application-authentication: certificate). En mostrador/.secrets están el
+ * cert y la llave generados para registrar la app en el portal de Bancolombia.
+ */
+function clientTls(): { cert: Buffer; key: Buffer } | null {
+  const certPath = process.env.BANCOLOMBIA_CERT_PATH;
+  const keyPath = process.env.BANCOLOMBIA_KEY_PATH;
+  if (!certPath || !keyPath) return null;
+  return { cert: readFileSync(certPath), key: readFileSync(keyPath) };
+}
+
+export type ObtenerQROficialInput = {
+  /** Tipo de llave registrada (ej. MERCHANTID, NIT, EMAIL, PHONE, ALPHANUMERIC). */
+  tipoLlave: string;
+  /** Valor de la llave (código de comercio, celular, NIT, correo…). */
+  valorLlave: string;
+  /** Formato de imagen del QR devuelto. */
+  formato?: 'SVG' | 'PNG' | 'PDF';
 };
 
-export type CobroQRResult = {
-  qrId: string;
-  qrCode: string; // payload EMVCo — se pasa directamente a la librería qrcode para generar imagen
+export type QROficialResult = {
+  /** Imagen del QR oficial en base64 (en el formato pedido). */
+  qrImageBase64: string;
+  formato: 'SVG' | 'PNG' | 'PDF';
 };
 
-export async function crearCobroQR(input: CobroQRInput): Promise<CobroQRResult> {
-  const authorization = await getAccessToken();
-
-  // Path configurable — ajustar en .env.local una vez Bancolombia entregue documentación
-  const path = process.env.BANCOLOMBIA_QR_PATH ?? '/qr-management/v1/qr-codes';
-
-  const res = await fetch(`${BASE_URL()}${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: authorization,
-      'Content-Type': 'application/json',
-      Accept: 'application/vnd.bancolombia.v4+json',
-    },
-    body: JSON.stringify({
-      monto: input.monto,
-      referencia: input.referencia,
-      ...(input.nombreComercio ? { nombreComercio: input.nombreComercio } : {}),
-      ...(input.descripcion ? { descripcion: input.descripcion } : {}),
-    }),
-    cache: 'no-store',
-  });
-
-  if (!res.ok) {
-    const texto = await res.text().catch(() => '');
-    throw new Error(`Bancolombia QR ${res.status}: ${texto}`);
+/**
+ * Pide a Bancolombia el QR oficial asociado a una llave registrada.
+ * Lanza Error si faltan credenciales o si la API responde con error.
+ */
+export async function obtenerQROficial(
+  input: ObtenerQROficialInput,
+): Promise<QROficialResult> {
+  const clientId = process.env.BANCOLOMBIA_CLIENT_ID;
+  const clientSecret = process.env.BANCOLOMBIA_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error('Bancolombia: credenciales (BANCOLOMBIA_CLIENT_ID/SECRET) no configuradas');
   }
 
-  const data = await res.json() as Record<string, unknown>;
+  const formato = input.formato ?? 'SVG';
+  const body = JSON.stringify({
+    data: {
+      qrInformation: { key: { type: input.tipoLlave, value: input.valorLlave } },
+      fileFormat: formato,
+    },
+  });
 
-  // Bancolombia puede retornar el código bajo distintos nombres de campo
-  const qrCode =
-    (data.qrCode ?? data.codigoQR ?? data.qr ?? data.payload ?? '') as string;
-  const qrId =
-    (data.qrId ?? data.id ?? data.codigoUnico ?? data.transaccionId ?? '') as string;
+  const url = new URL(`${baseUrl()}/qr-code-image`);
+  const tls = clientTls();
 
-  return { qrCode, qrId };
+  const raw = await new Promise<string>((resolve, reject) => {
+    const req = https.request(
+      {
+        method: 'POST',
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname + url.search,
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'client-id': clientId,
+          'client-secret': clientSecret,
+          'message-id': randomUUID(),
+          'Content-Length': Buffer.byteLength(body),
+        },
+        ...(tls ?? {}),
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          const code = res.statusCode ?? 0;
+          if (code >= 200 && code < 300) resolve(data);
+          else reject(new Error(`Bancolombia QR ${code}: ${data.slice(0, 300)}`));
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+
+  const json = JSON.parse(raw) as { data?: { qrImage?: string } };
+  const qrImageBase64 = json.data?.qrImage;
+  if (!qrImageBase64) throw new Error('Bancolombia QR: la respuesta no trae imagen');
+  return { qrImageBase64, formato };
 }

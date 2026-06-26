@@ -12,16 +12,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Banknote, QrCode, ArrowLeftRight, CheckCircle2, Loader2, Settings } from 'lucide-react';
+import { Banknote, QrCode, ArrowLeftRight, CheckCircle2, Loader2, Settings, Copy, Store } from 'lucide-react';
+import { BrebQR } from '@/components/breb/BrebQR';
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
 import { registrarVenta } from '@/lib/pos/actions';
-import { generarQRPago } from '@/lib/breb/qr-action';
 import { abrirWhatsAppRecibo, type ReciboData } from '@/lib/recibo';
 import { guardarClienteDesdeRecibo } from '@/lib/clientes/actions';
 import type { MetodoPago } from '@/lib/pos/types';
 import type { BrebConfig } from '@/lib/breb/queries';
-import { BrebQR } from '@/components/breb/BrebQR';
 
 type Step = 'metodo' | 'efectivo' | 'breb' | 'transferencia' | 'exito' | 'error';
 
@@ -56,9 +55,7 @@ export function PaymentModal({
   const [clienteSnap, setClienteSnap] = useState<{ id: string; nombre: string; telefono: string | null } | null>(null);
   const [reciboEnviado, setReciboEnviado] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [qrPayload, setQrPayload] = useState<string | null>(null);
-  const [qrId, setQrId] = useState<string | null>(null);
-  const [qrCargando, setQrCargando] = useState(false);
+  const [copiado, setCopiado] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -74,25 +71,22 @@ export function PaymentModal({
       setGuardarCli(true);
       setClienteSnap(null);
       setReciboEnviado(false);
-      setQrPayload(null);
-      setQrId(null);
+      setCopiado(false);
     }
   }, [open]);
 
-  // Cargar el QR cuando el usuario entra al paso Bre-B
-  useEffect(() => {
-    if (step !== 'breb' || !breb.configurado) return;
-    setQrCargando(true);
-    generarQRPago(total).then((res) => {
-      if (res) {
-        setQrPayload(res.payload);
-        setQrId(res.qrId ?? null);
-      }
-      setQrCargando(false);
-    }).catch(() => setQrCargando(false));
-  }, [step, breb.configurado, total]);
-
   const cambio = useMemo(() => Math.max(0, recibido - total), [recibido, total]);
+
+  function copiarLlave() {
+    if (!breb.llave) return;
+    navigator.clipboard
+      ?.writeText(breb.llave)
+      .then(() => {
+        setCopiado(true);
+        setTimeout(() => setCopiado(false), 2000);
+      })
+      .catch(() => {});
+  }
 
   const telDigits = telefono.replace(/\D/g, '');
   const telValido = telDigits.length >= 10;
@@ -127,7 +121,6 @@ export function PaymentModal({
       const res = await registrarVenta({
         metodo_pago: metodo,
         confirmado,
-        breb_transaccion_id: metodo === 'breb' && qrId ? qrId : undefined,
         cliente_id: cliente?.id ?? null,
         items: items.map((i) => ({
           producto_id: i.producto_id,
@@ -172,7 +165,7 @@ export function PaymentModal({
         <DialogHeader>
           <DialogTitle>
             {step === 'exito'
-              ? '¡Venta registrada!'
+              ? '¡Venta realizada! 🎉'
               : step === 'error'
                 ? 'Algo salió mal'
                 : `Cobrar ${formatCOP(total)}`}
@@ -194,7 +187,7 @@ export function PaymentModal({
             <MetodoButton
               icon={QrCode}
               titulo="Bre-B"
-              subtitulo="QR cualquier banco — próximamente activo"
+              subtitulo="El cliente paga a tu llave desde cualquier banco"
               color="var(--utilidad)"
               onClick={() => setStep('breb')}
             />
@@ -268,27 +261,68 @@ export function PaymentModal({
         )}
 
         {step === 'breb' && (
-          breb.configurado && breb.llave ? (
-            <div className="space-y-4 text-center">
-              <div className="flex justify-center">
-                {qrCargando ? (
-                  <div className="flex items-center justify-center rounded-2xl bg-secondary" style={{ width: 208, height: 208 }}>
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <BrebQR
-                    overridePayload={qrPayload ?? undefined}
-                    llave={breb.llave}
-                    nombre={breb.nombreNegocio}
-                    monto={total}
-                  />
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                El cliente escanea el QR desde la app de su banco y paga{' '}
-                <span className="font-semibold text-foreground">{formatCOP(total)}</span>.
-                Cuando te llegue la plata, confirma abajo.
-              </p>
+          breb.configurado ? (
+            <div className="space-y-4">
+              {breb.qrPayload && (
+                <div
+                  className="flex flex-col items-center gap-2 rounded-2xl p-4"
+                  style={{ backgroundColor: 'color-mix(in oklch, var(--utilidad) 12%, transparent)' }}
+                >
+                  <p className="text-xs text-muted-foreground">
+                    El cliente <strong>escanea</strong> este QR desde la app de cualquier banco:
+                  </p>
+                  <BrebQR overridePayload={breb.qrPayload} size={208} />
+                  <p className="text-sm">
+                    Monto a pagar:{' '}
+                    <span className="font-semibold tabular-nums">{formatCOP(total)}</span>
+                  </p>
+                </div>
+              )}
+
+              {breb.llave && (
+                <div
+                  className="rounded-2xl p-4 text-center"
+                  style={{ backgroundColor: 'color-mix(in oklch, var(--utilidad) 12%, transparent)' }}
+                >
+                  <p className="text-xs text-muted-foreground">
+                    {breb.qrPayload
+                      ? '¿No puede escanear? También puede pagar a esta llave:'
+                      : (<>Dile al cliente que te pague por <strong>Bre-B</strong> a esta llave:</>)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={copiarLlave}
+                    className="mt-2 inline-flex max-w-full items-center gap-2 rounded-xl bg-card px-4 py-2 shadow-sm"
+                  >
+                    <span className="break-all text-xl font-bold tracking-wide">{breb.llave}</span>
+                    <Copy className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </button>
+                  <p className="mt-1 h-4 text-xs text-[var(--ingreso)]">
+                    {copiado ? '✓ Llave copiada' : ''}
+                  </p>
+                  {breb.banco && (
+                    <p className="text-xs text-muted-foreground">Cuenta en {breb.banco}</p>
+                  )}
+                  {!breb.qrPayload && (
+                    <p className="mt-2 text-sm">
+                      Monto a pagar:{' '}
+                      <span className="font-semibold tabular-nums">{formatCOP(total)}</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {!breb.qrPayload && (
+                <div className="space-y-1 rounded-2xl bg-secondary/50 p-3 text-left text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground">
+                    ¿Cómo paga el cliente? (desde cualquier banco)
+                  </p>
+                  <p>1. Abre la app de su banco y entra a <strong>Bre-B</strong>.</p>
+                  <p>2. Elige “Enviar / pagar a una llave”.</p>
+                  <p>3. Escribe tu llave y paga {formatCOP(total)}.</p>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Button
                   className="w-full rounded-2xl h-12"
@@ -384,7 +418,7 @@ export function PaymentModal({
             <p className="text-sm text-muted-foreground">
               {fuePendiente
                 ? `Venta #${numeroVenta} quedó pendiente. Confírmala desde "Ventas de hoy" cuando recibas el pago.`
-                : `Venta #${numeroVenta} guardada. ¡Sigue así! 💪`}
+                : `¡Gracias! Venta #${numeroVenta} realizada. 💪`}
             </p>
 
             {/* Recibo por WhatsApp — sin API de Meta, abre wa.me en el celular */}
@@ -454,11 +488,10 @@ export function PaymentModal({
 
             <Button
               size="lg"
-              variant={reciboData && !reciboEnviado ? 'outline' : 'default'}
-              className="w-full rounded-2xl h-12"
+              className="w-full rounded-2xl h-12 gap-2"
               onClick={onSuccess}
             >
-              {reciboData && !reciboEnviado ? 'Omitir, no enviar recibo' : 'Hacer otra venta'}
+              <Store className="h-5 w-5" /> Seguir vendiendo
             </Button>
           </div>
         )}

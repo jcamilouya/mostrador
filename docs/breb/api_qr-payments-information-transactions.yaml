@@ -1,0 +1,976 @@
+swagger: '2.0'
+info:
+  title: QR Payments Information - Transactions
+  version: 1.0.2
+  description: >-
+    Esta operación permite ejecutar la transacción de transferencia por medio de
+    un código QR
+  x-ibm-name: qr-payments-information-transactions
+basePath: >-
+  /v1/sales-service/servicing/payment-initiation/qr-payments-information/transactions
+paths:
+  /retrieve-details:
+    post:
+      operationId: retrieveDetails
+      x-api-type: traditional
+      summary: >-
+        Permite consultar informacion detallada de las transacciones realizadas
+        con codigos QR
+      description: >-
+        ### Clasificación de la información: Público
+
+        Capacidad orientada a consultar informacion detallada de la transaccion
+        que se llevo a cabo durante un proceso de pago con códigos QR,
+        permitiendole a los comercios conocer las transacciones realizadas por
+        los diferentes usuarios.
+      parameters:
+        - name: client-id
+          required: true
+          description: Credencial client id
+          in: header
+          type: string
+        - name: client-secret
+          required: true
+          description: Credencial client secret
+          in: header
+          type: string
+        - name: accept
+          in: header
+          required: true
+          type: string
+          description: >-
+            application/vnd.bancolombia.v4+json, el cual representa el formato
+            de mensajería.
+        - name: message-id
+          in: header
+          required: true
+          type: string
+          pattern: >-
+            ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+          description: >-
+            Identificador de transacción. Se recomienda usar un UUID para el
+            valor de este campo Ejemplo: c4e6bd04-5149-11e7-b114-b2f933d5fe66.
+        - in: body
+          name: body
+          description: Informacion para realizar la peticion del estado de la transaccion
+          required: true
+          schema:
+            $ref: '#/definitions/retrieveDetailsRequest'
+      responses:
+        '200':
+          x-success-response: Successfull
+          schema:
+            $ref: '#/definitions/retrieveDetailsResponse'
+          description: Respuesta exitosa
+          x-ibm-languages:
+            description:
+              en: Successful response.
+          headers:
+            Content-Type:
+              type: string
+              description: >-
+                Formato de mensajeria de la API. Ejemplo:
+                application/vnd.bancolombia.v4+json.
+              x-ibm-languages:
+                description:
+                  en: >-
+                    API message format. Example:
+                    application/vnd.bancolombia.v4+json.
+            API-Version:
+              type: string
+              description: 'Version de la API. Ejemplo: 1.0.1.'
+              x-ibm-languages:
+                description:
+                  en: 'API Version. Example: 1.0.1.'
+            RateLimit-Limit:
+              type: number
+              description: Limite de solicitudes por intervalo de tiempo
+              x-ibm-languages:
+                description:
+                  en: Resquest limit per time interval.
+            message-id:
+              type: string
+              description: >-
+                Identificador del mensaje o de correlacion usado para la
+                trazabilidad de los llamados a las APIs.
+              x-ibm-languages:
+                description:
+                  en: >-
+                    Message identifier or correlation identifier used for the
+                    traceability of the API calls.
+        '400':
+          $ref: '#/responses/400'
+        '401':
+          $ref: '#/responses/401'
+        '404':
+          $ref: '#/responses/404'
+        '500':
+          $ref: '#/responses/500'
+        '502':
+          $ref: '#/responses/502'
+        '503':
+          $ref: '#/responses/503'
+        '504':
+          $ref: '#/responses/504'
+      security:
+        - clientSecret: []
+          clientId: []
+      tags:
+        - Transactions
+  /health:
+    head:
+      operationId: healthOperation
+      summary: Permite consultar el estado de la aplicacion para la analitica.
+      description: '### Analitica del API, permite consultar el estado de la aplicacion.'
+      responses:
+        '200':
+          description: Respuesta exitosa.
+          x-ibm-languages:
+            description:
+              en: Successful response.
+      security:
+        - clientId: []
+          clientSecret: []
+      tags:
+        - Monitoring
+responses:
+  '400':
+    schema:
+      $ref: '#/definitions/failure'
+    description: Error en la solicitud.
+    x-ibm-languages:
+      description:
+        en: Error in the request.
+    examples:
+      application/vnd.bancolombia.v4+json:
+        meta:
+          _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe66
+          _requestDateTime: '2016-06-23T09:07:21.205-07:00'
+          _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+        status: 400
+        title: Bad Resquest
+        errors:
+          - code: SA404
+            detail: >-
+              La longitud de la parte entera del parametro trackingId es
+              invalida
+    headers:
+      Content-Type:
+        type: string
+        description: >-
+          Formato de mensajería de la API. Ejemplo:
+          application/vnd.bancolombia.v4+json.
+        x-ibm-languages:
+          description:
+            en: 'API message format. Example: application/vnd.bancolombia.v4+json.'
+      API-Version:
+        type: string
+        description: 'Version de la API. Ejemplo: 1.0.1.'
+        x-ibm-languages:
+          description:
+            en: 'API Version. Example: 1.0.1.'
+      RateLimit-Limit:
+        type: number
+        description: Límite de solicitudes por intervalo de tiempo
+        x-ibm-languages:
+          description:
+            en: Resquest limit per time interval.
+      message-id:
+        type: string
+        description: >-
+          Identificador del mensaje o de correlación usado para la trazabilidad
+          de los llamados a las APIs.
+        x-ibm-languages:
+          description:
+            en: >-
+              Message identifier or correlation identifier used for the
+              traceability of the API calls.
+  '401':
+    schema:
+      $ref: '#/definitions/failure'
+    description: Credenciales incorrectas.
+    x-ibm-languages:
+      description:
+        en: Incorrect credentials.
+    examples:
+      application/vnd.bancolombia.v4+json:
+        meta:
+          _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe68
+          _requestDateTime: '2016-06-23T09:07:21.205-07:00'
+          _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+        status: 401
+        title: Unauthorized
+        errors:
+          - code: SA401
+            detail: El consumidor no tiene acceso a la información solicitada
+    headers:
+      Content-Type:
+        type: string
+        description: >-
+          Formato de mensajería de la API. Ejemplo:
+          application/vnd.bancolombia.v4+json.
+        x-ibm-languages:
+          description:
+            en: 'API message format. Example: application/vnd.bancolombia.v4+json.'
+      API-Version:
+        type: string
+        description: 'Version de la API. Ejemplo: 1.0.1.'
+        x-ibm-languages:
+          description:
+            en: 'API Version. Example: 1.0.1.'
+      RateLimit-Limit:
+        type: number
+        description: Límite de solicitudes por intervalo de tiempo
+        x-ibm-languages:
+          description:
+            en: Resquest limit per time interval.
+      message-id:
+        type: string
+        description: >-
+          Identificador del mensaje o de correlación usado para la trazabilidad
+          de los llamados a las APIs.
+        x-ibm-languages:
+          description:
+            en: >-
+              Message identifier or correlation identifier used for the
+              traceability of the API calls.
+  '404':
+    schema:
+      $ref: '#/definitions/failure'
+    description: Recurso no encontrado.
+    x-ibm-languages:
+      description:
+        en: Resource not found.
+    examples:
+      application/vnd.bancolombia.v4+json:
+        meta:
+          _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe68
+          _requestDateTime: '2016-06-23T09:07:21.205-07:00'
+          _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+        status: 404
+        title: Not Found
+        errors:
+          - code: BP12700891
+            detail: EL CLIENTE NO TIENE CUENTAS DEL TIPO SOLICITADO
+    headers:
+      Content-Type:
+        type: string
+        description: >-
+          Formato de mensajería de la API. Ejemplo:
+          application/vnd.bancolombia.v4+json.
+        x-ibm-languages:
+          description:
+            en: 'API message format. Example: application/vnd.bancolombia.v4+json.'
+      API-Version:
+        type: string
+        description: 'Version de la API. Ejemplo: 1.0.1.'
+        x-ibm-languages:
+          description:
+            en: 'API Version. Example: 1.0.1.'
+      RateLimit-Limit:
+        type: number
+        description: Límite de solicitudes por intervalo de tiempo
+        x-ibm-languages:
+          description:
+            en: Resquest limit per time interval.
+      message-id:
+        type: string
+        description: >-
+          Identificador del mensaje o de correlación usado para la trazabilidad
+          de los llamados a las APIs.
+        x-ibm-languages:
+          description:
+            en: >-
+              Message identifier or correlation identifier used for the
+              traceability of the API calls.
+  '500':
+    schema:
+      $ref: '#/definitions/failure'
+    description: Error interno del servidor.
+    x-ibm-languages:
+      description:
+        en: Internal server error.
+    examples:
+      application/vnd.bancolombia.v4+json:
+        meta:
+          _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe68
+          _requestDateTime: '2016-06-23T09:07:21.205-07:00'
+          _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+        status: 500
+        title: Internal Server Error
+        errors:
+          - code: SP500
+            detail: Ha ocurrido un error interno controlado en el servidor.
+    headers:
+      Content-Type:
+        type: string
+        description: >-
+          Formato de mensajería de la API. Ejemplo:
+          application/vnd.bancolombia.v4+json.
+        x-ibm-languages:
+          description:
+            en: 'API message format. Example: application/vnd.bancolombia.v4+json.'
+      API-Version:
+        type: string
+        description: 'Version de la API. Ejemplo: 1.0.1.'
+        x-ibm-languages:
+          description:
+            en: 'API Version. Example: 1.0.1.'
+      RateLimit-Limit:
+        type: number
+        description: Límite de solicitudes por intervalo de tiempo
+        x-ibm-languages:
+          description:
+            en: Resquest limit per time interval.
+      message-id:
+        type: string
+        description: >-
+          Identificador del mensaje o de correlación usado para la trazabilidad
+          de los llamados a las APIs.
+        x-ibm-languages:
+          description:
+            en: >-
+              Message identifier or correlation identifier used for the
+              traceability of the API calls.
+  '502':
+    schema:
+      $ref: '#/definitions/failure'
+    description: Error en la respuesta del proveedor del servicio.
+    x-ibm-languages:
+      description:
+        en: Error in the service provider response.
+    examples:
+      application/vnd.bancolombia.v4+json:
+        meta:
+          _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe68
+          _requestDateTime: '2016-06-23T09:07:21.205-07:00'
+          _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+        status: 502
+        title: Bad Gateway
+        errors:
+          - code: SP502
+            detail: El mensaje de respuesta recibido del servidor es inválido
+    headers:
+      Content-Type:
+        type: string
+        description: >-
+          Formato de mensajería de la API. Ejemplo:
+          application/vnd.bancolombia.v4+json.
+        x-ibm-languages:
+          description:
+            en: 'API message format. Example: application/vnd.bancolombia.v4+json.'
+      API-Version:
+        type: string
+        description: 'Version de la API. Ejemplo: 1.0.1.'
+        x-ibm-languages:
+          description:
+            en: 'API Version. Example: 1.0.1.'
+      RateLimit-Limit:
+        type: number
+        description: Límite de solicitudes por intervalo de tiempo
+        x-ibm-languages:
+          description:
+            en: Resquest limit per time interval.
+      message-id:
+        type: string
+        description: >-
+          Identificador del mensaje o de correlación usado para la trazabilidad
+          de los llamados a las APIs.
+        x-ibm-languages:
+          description:
+            en: >-
+              Message identifier or correlation identifier used for the
+              traceability of the API calls.
+  '503':
+    schema:
+      $ref: '#/definitions/failure'
+    description: Servicio no disponible.
+    x-ibm-languages:
+      description:
+        en: Service unavailable.
+    examples:
+      application/vnd.bancolombia.v4+json:
+        meta:
+          _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe68
+          _requestDateTime: '2016-06-23T09:07:21.205-07:00'
+          _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+        status: 503
+        title: Service Unavailable
+        errors:
+          - code: SP503
+            detail: >-
+              Por problemas tecnicos su transaccion no pudo atenderse en estos
+              momentos, por favor intente mas tarde
+    headers:
+      Content-Type:
+        type: string
+        description: >-
+          Formato de mensajería de la API. Ejemplo:
+          application/vnd.bancolombia.v4+json.
+        x-ibm-languages:
+          description:
+            en: 'API message format. Example: application/vnd.bancolombia.v4+json.'
+      API-Version:
+        type: string
+        description: 'Version de la API. Ejemplo: 1.0.1.'
+        x-ibm-languages:
+          description:
+            en: 'API Version. Example: 1.0.1.'
+      RateLimit-Limit:
+        type: number
+        description: Límite de solicitudes por intervalo de tiempo
+        x-ibm-languages:
+          description:
+            en: Resquest limit per time interval.
+      message-id:
+        type: string
+        description: >-
+          Identificador del mensaje o de correlación usado para la trazabilidad
+          de los llamados a las APIs.
+        x-ibm-languages:
+          description:
+            en: >-
+              Message identifier or correlation identifier used for the
+              traceability of the API calls.
+  '504':
+    schema:
+      $ref: '#/definitions/failure'
+    description: Tiempo de respuesta del proveedor del servicio excedido.
+    x-ibm-languages:
+      description:
+        en: Service provider response time exceeded.
+    examples:
+      application/vnd.bancolombia.v4+json:
+        meta:
+          _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe68
+          _requestDateTime: '2016-06-23T09:07:21.205-07:00'
+          _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+        status: 504
+        title: Gateway Timeout
+        errors:
+          - code: SP504
+            detail: El proveedor no respondió en tiempo esperado
+    headers:
+      Content-Type:
+        type: string
+        description: >-
+          Formato de mensajería de la API. Ejemplo:
+          application/vnd.bancolombia.v4+json.
+        x-ibm-languages:
+          description:
+            en: 'API message format. Example: application/vnd.bancolombia.v4+json.'
+      API-Version:
+        type: string
+        description: 'Version de la API. Ejemplo: 1.0.1.'
+        x-ibm-languages:
+          description:
+            en: 'API Version. Example: 1.0.1.'
+      RateLimit-Limit:
+        type: number
+        description: Límite de solicitudes por intervalo de tiempo
+        x-ibm-languages:
+          description:
+            en: Resquest limit per time interval.
+      message-id:
+        type: string
+        description: >-
+          Identificador del mensaje o de correlación usado para la trazabilidad
+          de los llamados a las APIs.
+        x-ibm-languages:
+          description:
+            en: >-
+              Message identifier or correlation identifier used for the
+              traceability of the API calls.
+definitions:
+  infoRequest:
+    type: object
+    required:
+      - date
+    properties:
+      trackingNumber:
+        type: string
+        maxLength: 50
+        example: NEQUI1234
+        pattern: ^[^~^&"%_?<>{}\[\]\\:@/]*$
+      reference:
+        type: string
+        maxLength: 150
+        example: Apto - 1936
+        pattern: ^[^~^&"%_?<>{}\[\]\\:@/]*$
+      date:
+        type: string
+        example: '2014-03-27'
+        maxLength: 19
+        pattern: '[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])$'
+  retrieveDetailsRequest:
+    type: object
+    required:
+      - data
+    properties:
+      data:
+        type: object
+        properties:
+          requestInfo:
+            $ref: '#/definitions/infoRequest'
+  retrieveDetailsResponse:
+    type: object
+    required:
+      - meta
+      - data
+    properties:
+      meta:
+        $ref: '#/definitions/meta'
+      data:
+        type: object
+        properties:
+          infoResponse:
+            $ref: '#/definitions/infoResponse'
+  infoResponse:
+    type: object
+    required:
+      - transactionDateTime
+      - transactionValue
+      - destinationAccountNumber
+      - origenIdentificationType
+      - origenIdentificationNumber
+      - origenAccountNumber
+      - transactionStatus
+      - responseCode
+      - qrId
+    properties:
+      commerceName:
+        type: string
+        description: Nombre del comercio
+        minLength: 1
+        maxLength: 60
+        example: Don papas
+      transactionDateTime:
+        type: string
+        format: date-time
+        description: Hora y fecha de la transaccion
+        pattern: >-
+          ^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(.\d{2}([0-9]))?Z$
+        example: '2023-07-20T11:30:00Z'
+      transactionValue:
+        type: number
+        format: double
+        maximum: 999999999999.99
+        description: Valor de la transaccion
+        example: 3000
+      transactionComision:
+        type: number
+        format: double
+        maximum: 9999999999.99
+        description: Comision de la transaccion
+        example: 123.12
+      transactionIva:
+        type: number
+        format: double
+        maximum: 9999999999.9
+        description: IVA de la transaccion
+        example: 1.9
+      transactionPayerCost:
+        type: number
+        format: double
+        maximum: 9999999999.9
+        description: Costo pagado por la transaccion
+        example: 500
+      trackingNumber:
+        type: string
+        description: Código de la identificacion de la transaccion
+        minLength: 1
+        maxLength: 50
+        example: QR911879545
+      externalReference:
+        type: string
+        description: Referencia externa
+        minLength: 1
+        maxLength: 150
+        example: Apto - 1936
+      destinationIdentificationType:
+        type: string
+        enum:
+          - CD
+          - CC
+          - CE
+          - NIT
+          - TI
+          - PASS
+          - EXTPNNRC
+          - EXTPJNRC
+          - FIDE
+          - RC
+        description: Tipo de documento de identificacion del titular cuenta destino
+        minLength: 1
+        maxLength: 20
+        example: CC
+      destinationIdentificationNumber:
+        type: string
+        description: Numero de documento de identificacion del titular cuenta destino
+        minLength: 1
+        maxLength: 20
+        example: '123455678'
+      destinationAccountType:
+        type: string
+        enum:
+          - D
+          - S
+        description: Tipo de la cuenta de la cuenta destino
+        minLength: 1
+        maxLength: 10
+        example: D
+      destinationAccountNumber:
+        type: string
+        description: Numero de cuenta, de la cuenta destino
+        minLength: 1
+        maxLength: 16
+        example: '129125494'
+      destinationAccountName:
+        type: string
+        description: Nombre del titular de la cuenta destino
+        minLength: 1
+        maxLength: 60
+        example: Pedro Perez
+      origenIdentificationType:
+        type: string
+        enum:
+          - CD
+          - CC
+          - CE
+          - NIT
+          - TI
+          - PASS
+          - EXTPNNRC
+          - EXTPJNRC
+          - FIDE
+          - RC
+        description: Tipo de documento de identificacion del titular cuenta origen
+        minLength: 1
+        maxLength: 20
+        example: CC
+      origenIdentificationNumber:
+        type: string
+        description: Numero de documento de identificacion del titular cuenta origen
+        minLength: 1
+        maxLength: 20
+        example: '523455672'
+      origenAccountType:
+        type: string
+        enum:
+          - D
+          - S
+        description: Tipo de cuenta de la cuenta origen
+        minLength: 1
+        maxLength: 20
+        example: Cuenta de Ahorros
+      origenAccountNumber:
+        type: string
+        description: Numero de cuenta, de la cuenta origen
+        minLength: 1
+        maxLength: 15
+        example: '12345678912'
+      transactionStatus:
+        type: string
+        description: Estado de la transaccion
+        minLength: 1
+        maxLength: 20
+        example: annulled
+      stateReason:
+        type: string
+        description: Motivo del estado
+        minLength: 1
+        maxLength: 20
+        example: Desistio de compra
+      responseCode:
+        type: string
+        description: Codigo de respuesta
+        minLength: 1
+        maxLength: 20
+        example: Exitoso
+      depositStatus:
+        type: string
+        description: Estado del deposito
+        minLength: 1
+        maxLength: 20
+        example: Exitoso
+      origenClientName:
+        type: string
+        description: Nombre del cliente origen
+        minLength: 1
+        maxLength: 60
+        example: Jose Ramirez
+      qrPointOfSale:
+        type: string
+        description: Punto de venta del QR
+        minLength: 1
+        maxLength: 60
+        example: Piso 4 Puesto 15
+      qrCashRegister:
+        type: string
+        description: Caja registradora
+        minLength: 1
+        maxLength: 20
+        example: Caja 4
+      toPlan:
+        type: string
+        description: Plan
+        minLength: 1
+        maxLength: 20
+        example: Plan Avanzado
+      toModel:
+        type: string
+        description: Modelo
+        minLength: 1
+        maxLength: 20
+        example: Modelo QR Mixto
+      transactionReference:
+        type: string
+        description: referencia de la transaccion
+        minLength: 1
+        maxLength: 150
+        example: QR - Don papas
+      contactEmailOne:
+        type: string
+        description: Contacto de email 1
+        minLength: 1
+        maxLength: 60
+        example: sede1donpp@gmail.com
+      notificationSentEmailOne:
+        type: boolean
+        description: Indicador enviar notificaciones al email 1
+        example: true
+      contactPhoneOne:
+        type: string
+        description: Contacto de celular 1
+        minLength: 1
+        maxLength: 20
+        example: '3117000222'
+      notificationSentPhoneOne:
+        type: boolean
+        description: Indicador enviar notificaciones al celuar 1
+        example: true
+      contactEmailTwo:
+        type: string
+        description: Contacto de email 2
+        minLength: 1
+        maxLength: 60
+        example: sede2donpp@gmail.com
+      notificationSentEmailTwo:
+        type: boolean
+        description: Indicador enviar notificaciones al email 2
+        example: true
+      contactPhoneTwo:
+        type: string
+        description: Contacto de celular 2
+        minLength: 1
+        maxLength: 60
+        example: '3117000223'
+      notificationSentPhoneTwo:
+        type: boolean
+        description: Indicador enviar notificaciones al celuar 2
+        example: true
+      contactEmailThree:
+        type: string
+        description: Contacto de email 3
+        minLength: 1
+        maxLength: 60
+        example: sede3donpp@gmail.com
+      notificationSentEmailThree:
+        type: boolean
+        description: Indicador enviar notificaciones al email 3
+        example: true
+      contactPhoneThree:
+        type: string
+        description: Contacto de celular 3
+        minLength: 1
+        maxLength: 60
+        example: '3117000224'
+      notificationSentPhoneThree:
+        type: boolean
+        description: Indicador enviar notificaciones al celuar 3
+        example: true
+      versionQr:
+        type: string
+        description: Version del codigo QR
+        minLength: 1
+        maxLength: 20
+        example: V2.0
+      qrId:
+        type: string
+        description: Identificador del QR
+        minLength: 1
+        maxLength: 50
+        example: 31e5bcea-5edb-4b07-b781-37abb68c1f3b
+      qrType:
+        type: string
+        description: Tipo de QR
+        minLength: 1
+        maxLength: 20
+        example: masivo
+      createdAt:
+        type: string
+        format: date-time
+        description: Fecha y hora de creacion del QR
+        pattern: >-
+          ^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(.\d{2}([0-9]))?Z$
+        example: '2023-07-20T11:30:00Z'
+      notificationSentCommerce:
+        type: boolean
+        description: Indicador de envio de notificaciones al comercio
+        example: true
+      notificationSentPayer:
+        type: boolean
+        description: Indicador de envio de notificaciones al pagador
+        example: true
+      responseCodeAnnul:
+        type: string
+        description: Código de respuesta de anulacion
+        minLength: 1
+        maxLength: 20
+        example: masivo
+      stateReasonAnnul:
+        type: string
+        description: Motivo de la anulacion
+        minLength: 1
+        maxLength: 20
+        example: Exitoso
+      trackingNumberAnnul:
+        type: string
+        description: Número de seguimiento de la anulacion
+        minLength: 1
+        maxLength: 60
+        example: RTT537962157
+      qrSeller:
+        type: string
+        description: Asesor de QR
+        minLength: 1
+        maxLength: 20
+        example: Alejandra Hernandez
+  meta:
+    description: Datos de trazabilidad e informacion técnica del mensaje.
+    type: object
+    required:
+      - _messageId
+      - _requestDateTime
+      - _applicationId
+    properties:
+      _messageId:
+        type: string
+        example: c4e6bd04-5149-11e7-b114-b2f933d5fe66
+      _requestDateTime:
+        type: string
+        format: date-time
+        example: '2016-06-23T09:07:21.205-07:00'
+      _applicationId:
+        type: string
+        example: acxff62e-6f12-42de-9012-3e7304418abd
+  failure:
+    type: object
+    description: Mensaje de respuesta cuando ocurre un error.
+    required:
+      - meta
+      - errors
+    properties:
+      meta:
+        $ref: '#/definitions/meta'
+      status:
+        type: number
+        description: >-
+          Codigo de estado HTTP (status code) asociado al mensaje de error de la
+          respuesta del llamado a la API.
+        example: 404
+      title:
+        type: string
+        description: >-
+          Titulo asociado al codigo de estado HTTP (status code) asociado al
+          mensaje de error de la respuesta del llamado a la API.
+        example: Not Found
+      errors:
+        type: array
+        description: Lista de errores detectados
+        items:
+          $ref: '#/definitions/error'
+  error:
+    type: object
+    required:
+      - code
+      - detail
+    properties:
+      code:
+        description: An application-specific error code, expressed as a string value.
+        type: string
+        example: BP404
+      detail:
+        description: >-
+          A human-readable explanation specific to this occurrence of the
+          problem.
+        type: string
+        example: Requested resource could not be found
+schemes:
+  - https
+consumes:
+  - application/json
+host: $(catalog.host)
+produces:
+  - application/json
+securityDefinitions:
+  clientId:
+    type: apiKey
+    in: header
+    name: Client-Id
+    x-key-type: client_id
+  clientSecret:
+    type: apiKey
+    in: header
+    name: Client-Secret
+    x-key-type: client_secret
+tags:
+  - name: Monitoring
+    description: Operaciones para realizar el monitoreo de la API
+  - name: Transactions
+    description: >-
+      Esta operación permite ejecutar la transacción de transferencia por medio
+      de un código QR
+x-ibm-configuration:
+  testable: true
+  enforced: true
+  cors:
+    enabled: true
+  phase: realized
+  catalogs:
+    sb:
+      properties:
+        catalogName: sandbox
+        profileTls: apic-tls-profile-cluster-eks-integracion-sandbox
+        endpoint: https://integracion-int-qa.apps.ambientesbc.lab/
+        hostName: gw-sandbox-qa.apps.ambientesbc.com
+        jwtTimeExpired: '86400'
+    Development:
+      properties:
+        catalogName: development
+        profileTls: apic-tls-profile-medios-de-pago
+        endpoint: >-
+          https://mp-vpn-qa.apps.ambientesbc.com/pago-sin-friccion/api/v1/info-trx/status
+        hostName: gw-medios-de-pago-dev.apps.ambientesbc.lab
+        jwtTimeExpired: '86400'
+    Production:
+      properties:
+        catalogName: production
+        profileTls: apic-tls-profile-medios-de-pago
+        endpoint: >-
+          https://mps.apps.bancolombia.com/pago-sin-friccion/api/v1/info-trx/status
+        hostName: gw-medios-de-pago.apps.bancolombia.com
+        jwtTimeExpired: '120'
+    Testing:
+      properties:
+        catalogName: testing
+        profileTls: apic-tls-profile-medios-de-pago
+        endpoint: >-
+          https://mp-vpn-qa.apps.ambientesbc.com/pago-sin-friccion/api/v1/info-trx/status
+        hostName: gw-medios-de-pago-qa.apps.ambientesbc.lab
+        jwtTimeExpired: '86400'
+  type: rest
+  application-authentication:
+    certificate: true
+x-API-Protocol:
+  Protocols: HTTPS

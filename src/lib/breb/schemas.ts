@@ -23,6 +23,8 @@ export const configuracionSchema = z.object({
   breb_llave: z.string().trim().max(99).optional().or(z.literal('')),
   breb_banco: z.string().trim().max(60).optional().or(z.literal('')),
   breb_merchant_id: z.string().trim().max(99).optional().or(z.literal('')),
+  // Payload EMVCo del QR oficial que el negocio subió desde la app de su banco.
+  breb_qr_payload: z.string().trim().max(2000).optional().or(z.literal('')),
 });
 
 export type ConfiguracionInput = z.infer<typeof configuracionSchema>;

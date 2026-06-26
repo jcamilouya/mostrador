@@ -98,3 +98,22 @@ export function construirPayloadBreb(input: BrebQRInput): string {
   payload += crc16(payload);
   return payload;
 }
+
+/**
+ * Valida que una cadena sea un payload EMVCo (QR de pago) bien formado:
+ *  - empieza con "000201" (Payload Format Indicator = 01)
+ *  - termina con el tag CRC (63 04 + 4 hex) y el CRC16 coincide
+ * Sirve para verificar el QR Bre-B OFICIAL que el negocio sube desde la app de
+ * su banco. No distingue marca de banco, solo que la estructura y el CRC son
+ * correctos (lo que descarta fotos borrosas o imágenes que no son un QR de pago).
+ */
+export function validarPayloadEmv(payload: string): boolean {
+  const p = (payload ?? '').trim();
+  if (!/^000201/.test(p)) return false;
+  if (p.length < 20) return false;
+  const body = p.slice(0, -4); // todo menos los 4 dígitos del valor CRC
+  const given = p.slice(-4).toUpperCase();
+  if (!body.endsWith('6304')) return false; // el tag CRC debe ser el último
+  if (!/^[0-9A-F]{4}$/.test(given)) return false;
+  return crc16(body) === given;
+}

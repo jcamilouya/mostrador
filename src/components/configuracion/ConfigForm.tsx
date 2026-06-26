@@ -1,15 +1,49 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { Store, QrCode, Loader2, Check, Info } from 'lucide-react';
+import jsQR from 'jsqr';
+import { Store, QrCode, Loader2, Check, Info, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BrebQR } from '@/components/breb/BrebQR';
 import { guardarConfiguracion, type ConfigState } from '@/lib/breb/actions';
+import { validarPayloadEmv } from '@/lib/breb/emv';
 import { BANCOS_COLOMBIA } from '@/lib/breb/schemas';
 import type { BrebConfig } from '@/lib/breb/queries';
+
+/**
+ * Lee una imagen (foto o pantallazo) y devuelve el contenido del QR que tenga,
+ * o null si no encuentra ninguno. Corre 100% en el navegador del negocio.
+ */
+async function decodificarQRDeImagen(file: File): Promise<string | null> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('No se pudo cargar la imagen'));
+      i.src = url;
+    });
+    // Reescalar imágenes grandes para que jsQR sea rápido sin perder lectura.
+    const maxDim = 1200;
+    const escala = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * escala));
+    const h = Math.max(1, Math.round(img.height * escala));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+    const code = jsQR(data, w, h, { inversionAttempts: 'attemptBoth' });
+    return code?.data ?? null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -39,6 +73,40 @@ export function ConfigForm({
   );
   const [nombre, setNombre] = useState(empresa.nombre);
   const [llave, setLlave] = useState(breb.llave ?? '');
+
+  // QR oficial del negocio (payload EMVCo decodificado de la imagen que sube).
+  const [qrPayload, setQrPayload] = useState(breb.qrPayload ?? '');
+  const [qrError, setQrError] = useState('');
+  const [qrLoading, setQrLoading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function onQrFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permitir volver a subir el mismo archivo
+    if (!file) return;
+    setQrError('');
+    setQrLoading(true);
+    try {
+      const payload = await decodificarQRDeImagen(file);
+      if (!payload) {
+        setQrError(
+          'No encontramos un QR en la imagen. Sube un pantallazo nítido del QR (no una foto de lejos).',
+        );
+        return;
+      }
+      if (!validarPayloadEmv(payload)) {
+        setQrError(
+          'La imagen tiene un QR, pero no parece un QR de pago Bre-B. Asegúrate de subir el QR de cobro de tu banco.',
+        );
+        return;
+      }
+      setQrPayload(payload);
+    } catch {
+      setQrError('No pudimos procesar la imagen. Intenta con otra captura.');
+    } finally {
+      setQrLoading(false);
+    }
+  }
 
   return (
     <form action={formAction} className="space-y-8">
@@ -153,24 +221,107 @@ export function ConfigForm({
               </p>
               <p>
                 <strong className="text-foreground">3.</strong> Listo: al cobrar con Bre-B en el
-                POS se genera un QR que <strong>cualquier banco</strong> puede pagar, y la plata
-                llega a tu cuenta.
+                POS le muestras tu llave al cliente y él te paga desde{' '}
+                <strong>cualquier banco</strong>. La plata llega a tu cuenta.
               </p>
               <p className="text-[var(--utilidad)]">
-                💡 Haz una primera prueba con un pago pequeño desde otro banco para confirmar.
+                💡 ¿Quieres que el cliente <strong>escanee</strong> en vez de digitar tu
+                llave? Sube tu QR oficial Bre-B aquí abajo.
               </p>
             </div>
           </div>
 
-          {/* Preview del QR */}
+          {/* Preview de la llave */}
           <div className="flex flex-col items-center justify-center gap-3 rounded-2xl bg-secondary/40 p-5 text-center">
-            <BrebQR llave={llave} nombre={nombre} />
+            <div className="rounded-2xl bg-card px-5 py-4 shadow-sm">
+              <p className="text-xs text-muted-foreground">Tu llave Bre-B</p>
+              <p className="mt-1 break-all text-2xl font-bold tracking-wide">{llave || '—'}</p>
+            </div>
             <p className="text-sm font-medium">
-              {llave ? 'Así verán tu QR los clientes' : 'Ingresa tu llave para ver el QR'}
+              {llave ? 'Esto verá el cliente al cobrar' : 'Ingresa tu llave para verla aquí'}
             </p>
             <p className="text-xs text-muted-foreground">
-              Pruébalo escaneándolo desde la app de tu banco.
+              El cliente le paga a esta llave por Bre-B desde cualquier banco.
             </p>
+          </div>
+        </div>
+
+        {/* QR oficial escaneable — sirve para CUALQUIER banco */}
+        <div className="mt-6 rounded-2xl border border-dashed border-border p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--utilidad)]/15">
+              <QrCode className="h-5 w-5 text-[var(--utilidad)]" />
+            </span>
+            <div className="flex-1">
+              <p className="font-medium">QR escaneable (recomendado)</p>
+              <p className="text-xs text-muted-foreground">
+                Sube tu QR Bre-B oficial —el que te muestra la app de tu banco— y tus
+                clientes lo escanean en el cobro en vez de digitar la llave. Funciona con
+                cualquier banco.
+              </p>
+            </div>
+          </div>
+
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            onChange={onQrFile}
+            className="hidden"
+          />
+          {/* El payload viaja con el formulario al guardar */}
+          <input type="hidden" name="breb_qr_payload" value={qrPayload} />
+
+          <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+            {qrPayload ? (
+              <BrebQR overridePayload={qrPayload} size={160} />
+            ) : (
+              <div className="flex h-40 w-40 shrink-0 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
+                <QrCode className="h-12 w-12" />
+              </div>
+            )}
+
+            <div className="flex-1 space-y-2 text-center sm:text-left">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl gap-2"
+                onClick={() => fileRef.current?.click()}
+                disabled={qrLoading}
+              >
+                {qrLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                {qrPayload ? 'Cambiar QR' : 'Subir mi QR Bre-B'}
+              </Button>
+
+              {qrPayload && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQrPayload('');
+                    setQrError('');
+                  }}
+                  className="block text-xs text-muted-foreground hover:text-[var(--egreso)]"
+                >
+                  Quitar QR
+                </button>
+              )}
+
+              {qrPayload && !qrError && (
+                <p className="flex items-center justify-center gap-1 text-xs text-[var(--ingreso)] sm:justify-start">
+                  <Check className="h-3.5 w-3.5" /> QR válido y listo para cobrar
+                </p>
+              )}
+              {qrError && <p className="text-xs text-[var(--egreso)]">{qrError}</p>}
+
+              <p className="text-[11px] text-muted-foreground">
+                Tip: en la app de tu banco entra a “Bre-B / Mi QR”, toma un{' '}
+                <strong>pantallazo</strong> y súbelo aquí.
+              </p>
+            </div>
           </div>
         </div>
       </section>

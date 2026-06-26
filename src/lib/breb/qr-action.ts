@@ -3,18 +3,21 @@
 import { createClient } from '@/lib/supabase/server';
 import { getBrebConfig } from './queries';
 import { construirPayloadBreb } from './emv';
-import { crearCobroQR } from './bancolombia';
+import { obtenerQROficial } from './bancolombia';
 
-export type QRPagoResult = {
-  payload: string;
-  qrId?: string;
-  modo: 'bancolombia' | 'emv';
-};
+export type QRPagoResult =
+  // QR EMVCo generado localmente con la llave (fallback / escaneable).
+  | { modo: 'emv'; payload: string }
+  // Imagen del QR oficial devuelta por Bancolombia (solo producción).
+  | { modo: 'bancolombia'; imagenBase64: string; formato: 'SVG' | 'PNG' | 'PDF' };
 
 /**
- * Genera el payload QR para un cobro Bre-B.
- * Intenta la API de Bancolombia primero; si no está configurada o falla,
- * genera el payload EMVCo localmente con la llave registrada.
+ * Genera el QR para un cobro Bre-B.
+ *
+ * Nota: el flujo principal del POS ya usa el QR OFICIAL que el negocio sube en
+ * Configuración (empresas.breb_qr_payload). Esta acción queda como apoyo para
+ * cuando Bancolombia habilite producción (comercios Bancolombia): intenta la API
+ * de Bancolombia y, si no, cae al payload EMVCo local con la llave.
  */
 export async function generarQRPago(
   monto: number,
@@ -32,41 +35,37 @@ export async function generarQRPago(
   if (!usuario?.empresa_id) return null;
 
   const breb = await getBrebConfig(usuario.empresa_id);
-  if (!breb.configurado || !breb.llave) return null;
+  if (!breb.configurado) return null;
 
   const ref = referencia ?? `mostrador-${Date.now()}`;
 
-  // Intentar la API de Bancolombia solo si hay credenciales Y NO es sandbox.
-  // En sandbox la API devuelve QR de prueba que ningún banco puede pagar de
-  // verdad; mientras no haya acceso de producción, usamos el QR EMV local.
+  // API de Bancolombia: solo si hay credenciales Y NO es sandbox (sandbox da QR
+  // de prueba no pagable + el WAF bloquea). Inactivo hasta tener producción.
   const bancolombiaProd =
     Boolean(process.env.BANCOLOMBIA_CLIENT_ID) &&
     Boolean(process.env.BANCOLOMBIA_CLIENT_SECRET) &&
-    !(process.env.BANCOLOMBIA_BASE_URL ?? '').includes('sandbox');
+    !(process.env.BANCOLOMBIA_QR_BASE_URL ?? '').includes('sandbox');
 
-  if (bancolombiaProd) {
+  if (bancolombiaProd && (breb.merchantId || breb.llave)) {
     try {
-      const result = await crearCobroQR({
-        monto,
-        referencia: ref,
-        nombreComercio: breb.nombreNegocio,
-        descripcion: `Cobro Mostrador`,
+      const r = await obtenerQROficial({
+        tipoLlave: breb.merchantId ? 'MERCHANTID' : 'ALPHANUMERIC',
+        valorLlave: breb.merchantId ?? breb.llave!,
       });
-      if (result.qrCode) {
-        return { payload: result.qrCode, qrId: result.qrId, modo: 'bancolombia' };
-      }
+      return { modo: 'bancolombia', imagenBase64: r.qrImageBase64, formato: r.formato };
     } catch (e) {
-      // Loguear en servidor y caer al fallback EMV
+      // Loguear en servidor y caer al fallback EMV local.
       console.error('[Bre-B Bancolombia]', e instanceof Error ? e.message : e);
     }
   }
 
-  // Fallback: payload EMVCo generado localmente
+  // Fallback: payload EMVCo local con la llave registrada.
+  if (!breb.llave) return null;
   const payload = construirPayloadBreb({
     llave: breb.llave,
     nombre: breb.nombreNegocio,
     monto,
     referencia: ref,
   });
-  return { payload, modo: 'emv' };
+  return { modo: 'emv', payload };
 }

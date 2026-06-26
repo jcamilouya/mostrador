@@ -34,17 +34,17 @@ function formatFecha(iso: string): string {
 /** Texto del recibo que se prellenará en WhatsApp. */
 export function generarTextoRecibo(venta: ReciboData): string {
   const items = venta.items
-    .map((i) => `• ${i.nombre_producto} ×${i.cantidad} — ${formatCOP(i.subtotal)}`)
+    .map((i) => `- ${i.nombre_producto} x${i.cantidad}: ${formatCOP(i.subtotal)}`)
     .join('\n');
 
   const metodo = METODO_LABEL[venta.metodo_pago] ?? venta.metodo_pago;
 
   return (
-    `🧾 *Recibo de compra*\n` +
+    `📄 *Recibo de compra*\n` +
     `📍 ${venta.negocio}\n` +
     `📅 ${formatFecha(venta.created_at)}\n\n` +
     `${items}\n\n` +
-    `──────────────\n` +
+    `--------------------\n` +
     `*Total: ${formatCOP(venta.total)}*\n` +
     `${metodo}\n\n` +
     `_Gracias por tu compra_ 🙏`

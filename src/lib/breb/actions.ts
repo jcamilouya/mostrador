@@ -33,6 +33,7 @@ export async function guardarConfiguracion(
     breb_llave: formData.get('breb_llave') ?? '',
     breb_banco: formData.get('breb_banco') ?? '',
     breb_merchant_id: formData.get('breb_merchant_id') ?? '',
+    breb_qr_payload: formData.get('breb_qr_payload') ?? '',
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -49,6 +50,7 @@ export async function guardarConfiguracion(
       breb_llave: d.breb_llave || null,
       breb_banco: d.breb_banco || null,
       breb_merchant_id: d.breb_merchant_id || null,
+      breb_qr_payload: d.breb_qr_payload || null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', empresaId);
