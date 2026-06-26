@@ -84,7 +84,7 @@ export async function miAccion(prev: State, formData: FormData): Promise<State> 
 
 ### Schema de BD
 
-Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `ventas`, `venta_items`, `egresos`, `movimientos_inventario`. El `empresa_id` es la clave de aislamiento en todas las tablas. Ver `supabase/schema.sql` para el schema completo.
+Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `ventas`, `venta_items`, `egresos`, `movimientos_inventario`. También `clientes`, `pagos` + `wompi_eventos` (Wompi), `egresos_pendientes_whatsapp` (bot). El `empresa_id` es la clave de aislamiento en todas las tablas. Ver `supabase/schema.sql` y `supabase/migrations/` para el schema completo.
 
 ### Realtime
 
@@ -92,7 +92,17 @@ Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `venta
 
 ### Plan y gating
 
-`lib/plan/queries.ts` exporta `getPlanInfo(empresaId)`. Devuelve `{ esPro, bloqueado, diasRestantes }`. Trial activo cuenta como Pro. Vencido → `bloqueado = true` → el POS rechaza ventas nuevas (soft block). La Analítica, Reportes y Bre-B están gatekeadas detrás de `esPro`.
+`lib/plan/queries.ts` exporta `getPlanInfo(empresaId)`. Devuelve `{ esPro, bloqueado, diasRestantes }`. Trial activo cuenta como Pro. Vencido → `bloqueado = true` → el POS rechaza ventas nuevas (soft block). La Analítica, Reportes y Bre-B están gatekeadas detrás de `esPro`. Precios en `PRECIOS` (COP/mes).
+
+### Pagos del plan (Wompi)
+
+Pasarela de pagos colombiana. Wompi **no tiene débito automático** → modelo de **pago único que renueva 30 días** el plan. Flujo:
+
+1. `UpgradeButton` (`components/plan/`) llama `POST /api/checkout/wompi/init` → crea fila `pagos` (estado `pending`) + **firma de integridad** y abre el Widget de Wompi (`checkout.wompi.co/widget.js`).
+2. El cliente paga (tarjeta/PSE/Nequi). El navegador **NO** activa el plan; solo redirige a `/checkout/wompi/return` (informativo).
+3. `POST /api/webhook/wompi` **es el único que activa el plan**: verifica el checksum (`lib/payments/wompi.ts`, `crypto.timingSafeEqual`), ventana de tiempo e idempotencia (`wompi_eventos`), y al `APPROVED` pone `empresas.plan` + extiende `plan_expira_en` +30 días (apila renovaciones).
+
+**Dormido sin llaves:** si faltan `WOMPI_*`, `init` responde `{ disponible: false }` sin tocar la BD — seguro de desplegar. Sandbox vs producción se decide por el prefijo de `WOMPI_PUBLIC_KEY` (`pub_test_` vs `pub_prod_`). Patrones de seguridad basados en el plugin externo *PagoKit*.
 
 ### Bre-B (cobros QR) — CRÍTICO
 
@@ -128,6 +138,11 @@ WHATSAPP_PHONE_NUMBER_ID         — número de WhatsApp Cloud API
 WHATSAPP_API_TOKEN               — token de Meta (enviar/leer mensajes)
 WHATSAPP_WEBHOOK_SECRET          — solo para el webhook externo legacy
 NEXT_PUBLIC_APP_URL
+# Pagos Wompi (suscripción del plan; dormido sin estas llaves)
+WOMPI_PUBLIC_KEY                 — pub_test_… / pub_prod_… (decide sandbox/prod)
+WOMPI_PRIVATE_KEY
+WOMPI_INTEGRITY_SECRET           — firma de integridad del checkout
+WOMPI_EVENTS_SECRET              — verificación del checksum del webhook
 # Bre-B / Bancolombia (solo producción; inactivo en sandbox)
 BANCOLOMBIA_CLIENT_ID
 BANCOLOMBIA_CLIENT_SECRET
@@ -142,5 +157,5 @@ BANCOLOMBIA_WEBHOOK_SECRET       — firma del webhook de conciliación
 ### Pendiente de construir
 
 - **WhatsApp en producción**: el bot está implementado (`/api/webhook/whatsapp` + `lib/whatsapp/`); falta dar de alta el número en **Meta WhatsApp Business** y poner los tokens. Es configuración/aprobación, no código.
-- **Wompi/Stripe**: botón "Mejorar a Pro" es stub (`UpgradeButton.tsx` muestra toast "próximamente").
+- **Activar Wompi**: la pasarela está integrada (ver *Pagos del plan*); falta crear la cuenta Wompi, correr `supabase/migrations/004_pagos.sql` y poner las llaves `WOMPI_*` (sandbox → producción).
 - **Bre-B API Bancolombia**: integrada pero inactiva; requiere acceso de **producción** + servidor autorizado en el WAF + comercio con cuenta Bancolombia. Ver sección Bre-B.
