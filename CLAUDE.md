@@ -39,11 +39,16 @@ src/app/
     ingresos/              — historial de ventas
     analitica/             — KPIs, top productos, horas pico, métodos de pago
     reportes/              — PDF + Excel vía /api/reportes
-    configuracion/         — datos negocio + config Bre-B
+    clientes/              — CRUD clientes (+ /nuevo, /[id])
+    configuracion/         — datos negocio + config Bre-B (incl. subir QR oficial)
     plan/                  — trial/básico/pro
+  admin/                   — panel interno (empresas/[id]); fuera de /dashboard
   api/
     reportes/              — genera PDF/Excel con jspdf + exceljs
-    webhook/whatsapp-invoice/ — recibe egresos desde el bot WhatsApp
+    ia/leer-factura/       — Anthropic vision extrae datos de una foto de factura
+    webhook/whatsapp-invoice/ — recibe egresos del bot WhatsApp externo
+    webhook/whatsapp/      — webhook del canal WhatsApp
+    webhook/bancolombia/   — confirma ventas Bre-B pagadas (conciliación, producción)
   dev/preview-login/       — login programático solo en development
 ```
 
@@ -89,9 +94,20 @@ Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `venta
 
 `lib/plan/queries.ts` exporta `getPlanInfo(empresaId)`. Devuelve `{ esPro, bloqueado, diasRestantes }`. Trial activo cuenta como Pro. Vencido → `bloqueado = true` → el POS rechaza ventas nuevas (soft block). La Analítica, Reportes y Bre-B están gatekeadas detrás de `esPro`.
 
-### Bre-B (cobros QR)
+### Bre-B (cobros QR) — CRÍTICO
 
-`lib/breb/emv.ts` construye el payload EMVCo estándar con CRC16. El GUI (`CO.COM.BRE-B`) es un placeholder — el banco/ACH lo asigna al registrar la llave. Validar con un cobro de prueba real antes de producción.
+**Un QR Bre-B pagable NO se puede generar localmente.** Decodificando un QR real (ver `docs/breb/`) se confirmó que el QR incrusta identificadores **opacos asignados por el banco/ACH** (GUIDs/UUIDs en el tag 26 + plantillas 91-94), no derivables de la llave. `lib/breb/emv.ts` (`construirPayloadBreb`) arma un EMVCo escaneable pero **NO garantizado pagable** — usar solo como preview/fallback. `validarPayloadEmv` valida cabecera EMVCo + CRC16.
+
+Dos formas reales de obtener un QR válido:
+
+1. **QR universal (activo, cualquier banco).** El negocio sube en Configuración la imagen de su QR Bre-B oficial; `ConfigForm` lo decodifica en el navegador con `jsqr`, lo valida y guarda el payload en `empresas.breb_qr_payload`. El POS lo re-dibuja escaneable vía `BrebQR` (`overridePayload`); si no hay QR, muestra la llave como texto.
+2. **API Bancolombia (producción, solo comercios Bancolombia).** `lib/breb/bancolombia.ts` → `obtenerQROficial({ tipoLlave, valorLlave })` consume el producto *QR Code Information* (`POST .../qr-code-image`, headers `client-id`/`client-secret`/`message-id`, mTLS opcional con cert de `.secrets/`) y devuelve la imagen del QR oficial. **Inactivo**: el sandbox da QR no pagable y el WAF (Incapsula) bloquea; se activa con credenciales de producción (gate `BANCOLOMBIA_QR_BASE_URL` sin `sandbox`). `qr-action.ts` orquesta API → fallback EMV.
+
+Conciliación de pagos: `/api/webhook/bancolombia` marca completadas las ventas `pendiente` por `breb_transaccion_id` y descuenta stock (producción); confirmación manual vía `confirmarVentaBreb` en `lib/breb/actions.ts`. Specs oficiales descargadas en `docs/breb/`. Bre-B está detrás de `esPro`.
+
+### IA de facturas
+
+`/api/ia/leer-factura` recibe una imagen y usa el SDK de Anthropic (`@anthropic-ai/sdk`, modelo `claude-haiku-4-5`) para extraer `{ proveedor, monto, fecha, categoria, descripcion }` en JSON. Lo usa el formulario de egresos para auto-rellenar un gasto desde una foto. Requiere `ANTHROPIC_API_KEY`.
 
 ### Webhook WhatsApp → Egresos
 
@@ -102,14 +118,23 @@ Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `venta
 ```
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY      — solo server-side
-GEMINI_API_KEY                 — pendiente reemplazar por ANTHROPIC_API_KEY
-WHATSAPP_WEBHOOK_SECRET        — debe coincidir con el bot
+SUPABASE_SERVICE_ROLE_KEY        — solo server-side
+ANTHROPIC_API_KEY                — IA de facturas (/api/ia/leer-factura)
+WHATSAPP_WEBHOOK_SECRET          — debe coincidir con el bot
 NEXT_PUBLIC_APP_URL
+# Bre-B / Bancolombia (solo producción; inactivo en sandbox)
+BANCOLOMBIA_CLIENT_ID
+BANCOLOMBIA_CLIENT_SECRET
+BANCOLOMBIA_QR_BASE_URL          — debe NO contener 'sandbox' para activar la API
+BANCOLOMBIA_CERT_PATH            — cert mTLS (en .secrets/, gitignored)
+BANCOLOMBIA_KEY_PATH             — llave privada mTLS (en .secrets/, gitignored)
+BANCOLOMBIA_WEBHOOK_SECRET       — firma del webhook de conciliación
 ```
+
+`.secrets/` (gitignored) guarda el cert/llave generados para registrar la app en el portal de Bancolombia Developers.
 
 ### Pendiente de construir
 
-- **Bot WhatsApp con Anthropic** (feature principal): recibe foto → Claude vision extrae datos → llama `/api/webhook/whatsapp-invoice`. Se construye fuera de `mostrador/` como servicio separado.
+- **Canal WhatsApp del bot**: la extracción con Claude vision ya existe in-app (`/api/ia/leer-factura`); falta el servicio externo que reciba la foto por WhatsApp y llame `/api/webhook/whatsapp-invoice`.
 - **Wompi/Stripe**: botón "Mejorar a Pro" es stub (`UpgradeButton.tsx` muestra toast "próximamente").
-- **Bre-B automático** (Fase 4b): diferido hasta convenio con banco.
+- **Bre-B API Bancolombia**: integrada pero inactiva; requiere acceso de **producción** + servidor autorizado en el WAF + comercio con cuenta Bancolombia. Ver sección Bre-B.
