@@ -109,9 +109,12 @@ Conciliación de pagos: `/api/webhook/bancolombia` marca completadas las ventas 
 
 `/api/ia/leer-factura` recibe una imagen y usa el SDK de Anthropic (`@anthropic-ai/sdk`, modelo `claude-haiku-4-5`) para extraer `{ proveedor, monto, fecha, categoria, descripcion }` en JSON. Lo usa el formulario de egresos para auto-rellenar un gasto desde una foto. Requiere `ANTHROPIC_API_KEY`.
 
-### Webhook WhatsApp → Egresos
+### Bot WhatsApp (egresos por foto)
 
-`POST /api/webhook/whatsapp-invoice` recibe `{ numero_emisor, proveedor, monto, fecha, categoria }` con header `x-webhook-secret`. Busca la empresa por `whatsapp_numero`, detecta duplicados (mismo proveedor+monto en 7 días) e inserta en `egresos` con `fuente: 'whatsapp_ia'`. El bot externo (a construir) usa Anthropic Claude vision para extraer los datos de la foto y llama este endpoint.
+Dos vías para registrar gastos desde WhatsApp:
+
+- **In-app (implementado):** `/api/webhook/whatsapp` es el webhook de **Meta WhatsApp Cloud API** (lógica en `lib/whatsapp/`). Foto → `descargarImagenMeta` → `procesarFactura` (Claude vision, ver *IA de facturas*) → guarda en `egresos_pendientes_whatsapp`; el dueño responde **SI/NO** para confirmar (`confirmarEgresoPendiente`) o cancelar. Empareja el negocio por `empresas.whatsapp_numero`. Falta solo dar de alta el número en Meta + env (`WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_API_TOKEN`).
+- **Webhook externo (legacy):** `POST /api/webhook/whatsapp-invoice` recibe egresos ya estructurados (`{ numero_emisor, proveedor, monto, fecha, categoria }`) con header `x-webhook-secret`; inserta en `egresos` con `fuente: 'whatsapp_ia'` y deduplica (mismo proveedor+monto en 7 días).
 
 ### Variables de entorno
 
@@ -119,8 +122,11 @@ Conciliación de pagos: `/api/webhook/bancolombia` marca completadas las ventas 
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY        — solo server-side
-ANTHROPIC_API_KEY                — IA de facturas (/api/ia/leer-factura)
-WHATSAPP_WEBHOOK_SECRET          — debe coincidir con el bot
+ANTHROPIC_API_KEY                — IA de facturas (/api/ia/leer-factura + bot)
+WHATSAPP_VERIFY_TOKEN            — verificación del webhook de Meta
+WHATSAPP_PHONE_NUMBER_ID         — número de WhatsApp Cloud API
+WHATSAPP_API_TOKEN               — token de Meta (enviar/leer mensajes)
+WHATSAPP_WEBHOOK_SECRET          — solo para el webhook externo legacy
 NEXT_PUBLIC_APP_URL
 # Bre-B / Bancolombia (solo producción; inactivo en sandbox)
 BANCOLOMBIA_CLIENT_ID
@@ -135,6 +141,6 @@ BANCOLOMBIA_WEBHOOK_SECRET       — firma del webhook de conciliación
 
 ### Pendiente de construir
 
-- **Canal WhatsApp del bot**: la extracción con Claude vision ya existe in-app (`/api/ia/leer-factura`); falta el servicio externo que reciba la foto por WhatsApp y llame `/api/webhook/whatsapp-invoice`.
+- **WhatsApp en producción**: el bot está implementado (`/api/webhook/whatsapp` + `lib/whatsapp/`); falta dar de alta el número en **Meta WhatsApp Business** y poner los tokens. Es configuración/aprobación, no código.
 - **Wompi/Stripe**: botón "Mejorar a Pro" es stub (`UpgradeButton.tsx` muestra toast "próximamente").
 - **Bre-B API Bancolombia**: integrada pero inactiva; requiere acceso de **producción** + servidor autorizado en el WAF + comercio con cuenta Bancolombia. Ver sección Bre-B.
