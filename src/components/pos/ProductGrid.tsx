@@ -1,8 +1,14 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Search, Package } from 'lucide-react';
+import { Search, Package, Layers } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
 import type { ProductoPOS } from '@/lib/pos/queries';
@@ -18,6 +24,7 @@ export function ProductGrid({
 }) {
   const [query, setQuery] = useState('');
   const [catFiltro, setCatFiltro] = useState<string>('todas');
+  const [picker, setPicker] = useState<ProductoPOS | null>(null);
   const add = useCart((s) => s.add);
 
   const filtrados = useMemo(() => {
@@ -28,6 +35,32 @@ export function ProductGrid({
       return p.nombre.toLowerCase().includes(q);
     });
   }, [productos, query, catFiltro]);
+
+  // Agrega al carrito el producto base o una opción/combo concreta.
+  function agregar(p: ProductoPOS, opcion?: { nombre: string; precio: number }) {
+    add({
+      producto_id: p.id,
+      nombre: opcion ? `${p.nombre} · ${opcion.nombre}` : p.nombre,
+      variante: opcion ? opcion.nombre : null,
+      precio_venta: opcion ? opcion.precio : p.precio_venta,
+      precio_compra: p.precio_compra,
+      stock_disponible: p.stock_actual,
+      categoria_color: p.categoria_color,
+    });
+  }
+
+  function onTap(p: ProductoPOS) {
+    if (p.variantes.length > 0) {
+      setPicker(p);
+    } else {
+      agregar(p);
+    }
+  }
+
+  // Precio más bajo a mostrar en la tarjeta cuando hay opciones.
+  function precioDesde(p: ProductoPOS): number {
+    return Math.min(p.precio_venta, ...p.variantes.map((v) => v.precio));
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -66,20 +99,12 @@ export function ProductGrid({
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {filtrados.map((p) => {
             const agotado = p.stock_actual <= 0;
+            const tieneOpciones = p.variantes.length > 0;
             return (
               <button
                 key={p.id}
                 disabled={agotado}
-                onClick={() =>
-                  add({
-                    producto_id: p.id,
-                    nombre: p.nombre,
-                    precio_venta: p.precio_venta,
-                    precio_compra: p.precio_compra,
-                    stock_disponible: p.stock_actual,
-                    categoria_color: p.categoria_color,
-                  })
-                }
+                onClick={() => onTap(p)}
                 className={`group relative flex min-w-0 flex-col gap-2 rounded-2xl bg-card p-3 text-left shadow-sm transition-transform ${
                   agotado ? 'opacity-50' : 'hover:scale-[1.02] active:scale-95'
                 }`}
@@ -105,11 +130,20 @@ export function ProductGrid({
                       style={{ color: p.categoria_color ?? 'var(--muted-foreground)' }}
                     />
                   )}
+                  {tieneOpciones && (
+                    <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full bg-foreground/85 px-2 py-0.5 text-[10px] font-medium text-background">
+                      <Layers className="h-3 w-3" />
+                      {p.variantes.length + 1} opc.
+                    </span>
+                  )}
                 </div>
                 <p className="line-clamp-2 text-sm font-medium leading-tight">{p.nombre}</p>
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold tabular-nums">
-                    {formatCOP(p.precio_venta)}
+                    {tieneOpciones && (
+                      <span className="mr-1 text-[10px] font-normal text-muted-foreground">desde</span>
+                    )}
+                    {formatCOP(tieneOpciones ? precioDesde(p) : p.precio_venta)}
                   </p>
                   <span
                     className={`text-[10px] ${
@@ -128,7 +162,61 @@ export function ProductGrid({
           })}
         </div>
       )}
+
+      {/* Selector de opción/combo */}
+      <Dialog open={picker !== null} onOpenChange={(o) => !o && setPicker(null)}>
+        <DialogContent className="max-w-sm rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>{picker?.nombre}</DialogTitle>
+          </DialogHeader>
+          {picker && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Elige una opción:</p>
+              <OpcionButton
+                nombre="Sencillo"
+                precio={picker.precio_venta}
+                onClick={() => {
+                  agregar(picker);
+                  setPicker(null);
+                }}
+              />
+              {picker.variantes.map((v, idx) => (
+                <OpcionButton
+                  key={`${v.nombre}-${idx}`}
+                  nombre={v.nombre}
+                  precio={v.precio}
+                  onClick={() => {
+                    agregar(picker, v);
+                    setPicker(null);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function OpcionButton({
+  nombre,
+  precio,
+  onClick,
+}: {
+  nombre: string;
+  precio: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-sm transition-colors hover:bg-secondary"
+    >
+      <span className="min-w-0 flex-1 truncate font-medium">{nombre}</span>
+      <span className="shrink-0 font-semibold tabular-nums">{formatCOP(precio)}</span>
+    </button>
   );
 }
 

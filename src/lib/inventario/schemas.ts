@@ -4,6 +4,29 @@ const moneyString = z
   .union([z.string(), z.number()])
   .transform((v) => (typeof v === 'string' ? parseFloat(v.replace(/[^0-9.-]/g, '')) || 0 : v));
 
+// Una opción/combo del producto: nombre + su precio completo.
+const varianteItemSchema = z.object({
+  nombre: z.string().min(1, { error: 'Cada opción necesita un nombre' }).max(60).trim(),
+  precio: moneyString.pipe(z.number().min(0, { error: 'Precio inválido' })),
+});
+
+// Llega del formulario como un string JSON (hidden input). Lo parseamos,
+// descartamos basura y validamos. Si algo falla, queda como lista vacía.
+export const variantesSchema = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((raw) => {
+    if (typeof raw !== 'string' || !raw.trim()) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })
+  .pipe(z.array(varianteItemSchema).max(20, { error: 'Máximo 20 opciones' }));
+
+export type VarianteItem = z.infer<typeof varianteItemSchema>;
+
 export const productoSchema = z.object({
   nombre: z.string().min(2, { error: 'El nombre es muy corto' }).max(200).trim(),
   descripcion: z.string().max(500).trim().optional().or(z.literal('')),
@@ -15,6 +38,7 @@ export const productoSchema = z.object({
   stock_actual: moneyString.pipe(z.number().int().min(0)),
   stock_minimo: moneyString.pipe(z.number().int().min(0)),
   activo: z.union([z.boolean(), z.literal('on'), z.literal('off')]).optional().default(true),
+  variantes: variantesSchema,
 });
 
 export const categoriaSchema = z.object({

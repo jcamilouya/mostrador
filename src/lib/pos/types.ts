@@ -1,6 +1,12 @@
 export type CartItem = {
+  // Identifica la línea del carrito. Es producto_id, o producto_id::variante
+  // cuando se eligió una opción/combo, para que dos opciones del mismo
+  // producto sean líneas distintas.
+  lineId: string;
   producto_id: string;
   nombre: string;
+  // Nombre de la opción/combo elegida (null = producto sencillo).
+  variante?: string | null;
   precio_venta: number;
   precio_compra: number;
   cantidad: number;

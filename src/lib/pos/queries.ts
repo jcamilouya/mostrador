@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { normalizarVariantes, type VarianteItem } from '@/lib/inventario/queries';
 
 export type ProductoPOS = {
   id: string;
@@ -10,6 +11,7 @@ export type ProductoPOS = {
   categoria_id: string | null;
   categoria_nombre: string | null;
   categoria_color: string | null;
+  variantes: VarianteItem[];
 };
 
 export type VentaResumen = {
@@ -26,7 +28,7 @@ export async function getProductosPOS(empresaId: string): Promise<ProductoPOS[]>
   const supabase = await createClient();
   const { data } = await supabase
     .from('productos')
-    .select('id, nombre, precio_venta, precio_compra, stock_actual, imagen_url, categoria_id, categorias (nombre, color)')
+    .select('id, nombre, precio_venta, precio_compra, stock_actual, imagen_url, categoria_id, variantes, categorias (nombre, color)')
     .eq('empresa_id', empresaId)
     .eq('activo', true)
     .order('nombre');
@@ -43,6 +45,7 @@ export async function getProductosPOS(empresaId: string): Promise<ProductoPOS[]>
       categoria_id: p.categoria_id,
       categoria_nombre: (cat as { nombre?: string } | null)?.nombre ?? null,
       categoria_color: (cat as { color?: string } | null)?.color ?? null,
+      variantes: normalizarVariantes(p.variantes),
     };
   });
 }

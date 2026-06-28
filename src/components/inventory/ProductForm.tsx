@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Camera, Check, Loader2, Plus, Save, ArrowLeft, X } from 'lucide-react';
+import { Camera, Check, Loader2, Plus, Save, ArrowLeft, X, Layers, Trash2 } from 'lucide-react';
 import type { Categoria, Producto } from '@/lib/inventario/queries';
 import type { ActionState } from '@/lib/inventario/actions';
 import { crearCategoria } from '@/lib/inventario/actions';
@@ -107,6 +107,27 @@ export function ProductForm({
   const [quitarImagen, setQuitarImagen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Opciones / combos: el precio se maneja como string en el input.
+  const [variantes, setVariantes] = useState<{ nombre: string; precio: string }[]>(
+    (producto?.variantes ?? []).map((v) => ({ nombre: v.nombre, precio: String(v.precio) })),
+  );
+  // Solo las opciones con nombre se envían (precio vacío = 0).
+  const variantesLimpias = variantes
+    .filter((v) => v.nombre.trim().length > 0)
+    .map((v) => ({ nombre: v.nombre.trim(), precio: Number(v.precio) || 0 }));
+
+  function agregarVariante() {
+    setVariantes((prev) => [...prev, { nombre: '', precio: '' }]);
+  }
+  function actualizarVariante(idx: number, campo: 'nombre' | 'precio', valor: string) {
+    setVariantes((prev) =>
+      prev.map((v, i) => (i === idx ? { ...v, [campo]: valor } : v)),
+    );
+  }
+  function quitarVariante(idx: number) {
+    setVariantes((prev) => prev.filter((_, i) => i !== idx));
+  }
+
   const [mostrarNuevaCat, setMostrarNuevaCat] = useState(false);
   const [colorCat, setColorCat] = useState('#6366f1');
   const [nombreCat, setNombreCat] = useState('');
@@ -174,6 +195,9 @@ export function ProductForm({
       {/* Hidden para quitar imagen */}
       {quitarImagen && <input type="hidden" name="quitar_imagen" value="1" />}
 
+      {/* Opciones / combos serializadas a JSON */}
+      <input type="hidden" name="variantes" value={JSON.stringify(variantesLimpias)} />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Columna principal */}
         <div className="space-y-4 lg:col-span-2">
@@ -191,7 +215,6 @@ export function ProductForm({
                   type="file"
                   name="imagen"
                   accept="image/*"
-                  capture="environment"
                   className="sr-only"
                   onChange={handleImageChange}
                 />
@@ -378,6 +401,76 @@ export function ProductForm({
                 />
               </div>
             </div>
+          </div>
+
+          {/* Opciones / combos */}
+          <div className="rounded-3xl bg-card p-6 shadow-sm space-y-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="flex items-center gap-2 font-semibold">
+                  <Layers className="h-4 w-4" /> Opciones / combos
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Para vender el mismo producto en varias presentaciones. Ej: una
+                  hamburguesa “Con papas” o “Con papas y gaseosa”, cada una con su precio.
+                </p>
+              </div>
+            </div>
+
+            {variantes.length > 0 && (
+              <div className="space-y-2">
+                {/* Encabezados solo en pantallas grandes */}
+                <div className="hidden grid-cols-[1fr_9rem_2.5rem] gap-2 px-1 sm:grid">
+                  <span className="text-xs font-medium text-muted-foreground">Nombre de la opción</span>
+                  <span className="text-xs font-medium text-muted-foreground">Precio</span>
+                  <span />
+                </div>
+                {variantes.map((v, idx) => (
+                  <div
+                    key={idx}
+                    className="grid grid-cols-[1fr_2.5rem] items-center gap-2 sm:grid-cols-[1fr_9rem_2.5rem]"
+                  >
+                    <Input
+                      value={v.nombre}
+                      onChange={(e) => actualizarVariante(idx, 'nombre', e.target.value)}
+                      placeholder="Con papas"
+                      className="rounded-xl h-11 col-span-1 max-sm:col-start-1"
+                    />
+                    <Input
+                      value={v.precio}
+                      onChange={(e) => actualizarVariante(idx, 'precio', e.target.value)}
+                      type="number"
+                      step="100"
+                      min="0"
+                      placeholder="Precio"
+                      className="rounded-xl h-11 tabular-nums max-sm:col-span-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => quitarVariante(idx)}
+                      className="flex h-11 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
+                      aria-label="Quitar opción"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={agregarVariante}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-dashed px-3 py-2 text-sm text-primary hover:bg-primary/10 transition-colors"
+            >
+              <Plus className="h-4 w-4" /> Agregar opción
+            </button>
+
+            {variantes.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Si no agregas opciones, el producto se vende solo con su precio normal.
+              </p>
+            )}
           </div>
         </div>
 

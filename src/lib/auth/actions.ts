@@ -51,7 +51,7 @@ export async function signUp(_prev: AuthState, formData: FormData): Promise<Auth
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      emailRedirectTo: `${origin}/auth/callback?next=/onboarding`,
+      emailRedirectTo: `${origin}/auth/callback?next=/onboarding&confirmar=1`,
       data: { nombre: parsed.data.nombre },
     },
   });

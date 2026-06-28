@@ -8,47 +8,53 @@ type ClienteSel = { id: string; nombre: string; telefono: string | null };
 type CartState = {
   items: CartItem[];
   cliente: ClienteSel | null;
-  add: (item: Omit<CartItem, 'cantidad'>) => void;
-  setCantidad: (productoId: string, cantidad: number) => void;
-  remove: (productoId: string) => void;
+  add: (item: Omit<CartItem, 'cantidad' | 'lineId'>) => void;
+  setCantidad: (lineId: string, cantidad: number) => void;
+  remove: (lineId: string) => void;
   setCliente: (cliente: ClienteSel | null) => void;
   clear: () => void;
   total: () => number;
   totalItems: () => number;
 };
 
+// Una línea por producto + opción elegida.
+function calcularLineId(item: { producto_id: string; variante?: string | null }): string {
+  return item.variante ? `${item.producto_id}::${item.variante}` : item.producto_id;
+}
+
 export const useCart = create<CartState>((set, get) => ({
   items: [],
   cliente: null,
   add: (item) =>
     set((state) => {
-      const existing = state.items.find((i) => i.producto_id === item.producto_id);
+      const lineId = calcularLineId(item);
+      const existing = state.items.find((i) => i.lineId === lineId);
       if (existing) {
         const nuevaCantidad = Math.min(existing.cantidad + 1, item.stock_disponible);
         return {
           items: state.items.map((i) =>
-            i.producto_id === item.producto_id ? { ...i, cantidad: nuevaCantidad } : i,
+            i.lineId === lineId ? { ...i, cantidad: nuevaCantidad } : i,
           ),
         };
       }
       if (item.stock_disponible <= 0) return state;
-      return { items: [...state.items, { ...item, cantidad: 1 }] };
+      return { items: [...state.items, { ...item, lineId, cantidad: 1 }] };
     }),
-  setCantidad: (productoId, cantidad) =>
+  setCantidad: (lineId, cantidad) =>
     set((state) => {
       if (cantidad <= 0) {
-        return { items: state.items.filter((i) => i.producto_id !== productoId) };
+        return { items: state.items.filter((i) => i.lineId !== lineId) };
       }
       return {
         items: state.items.map((i) =>
-          i.producto_id === productoId
+          i.lineId === lineId
             ? { ...i, cantidad: Math.min(cantidad, i.stock_disponible) }
             : i,
         ),
       };
     }),
-  remove: (productoId) =>
-    set((state) => ({ items: state.items.filter((i) => i.producto_id !== productoId) })),
+  remove: (lineId) =>
+    set((state) => ({ items: state.items.filter((i) => i.lineId !== lineId) })),
   setCliente: (cliente) => set({ cliente }),
   clear: () => set({ items: [], cliente: null }),
   total: () => get().items.reduce((acc, i) => acc + i.cantidad * i.precio_venta, 0),

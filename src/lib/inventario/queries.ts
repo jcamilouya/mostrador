@@ -1,4 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
+import type { VarianteItem } from './schemas';
+
+export type { VarianteItem };
 
 export type Producto = {
   id: string;
@@ -13,8 +16,20 @@ export type Producto = {
   activo: boolean;
   categoria_id: string | null;
   imagen_url: string | null;
+  variantes: VarianteItem[];
   categorias: { nombre: string; color: string } | null;
 };
+
+/** Normaliza el JSONB de variantes a un arreglo limpio de { nombre, precio }. */
+export function normalizarVariantes(raw: unknown): VarianteItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((v) => ({
+      nombre: typeof v?.nombre === 'string' ? v.nombre : '',
+      precio: Number(v?.precio) || 0,
+    }))
+    .filter((v) => v.nombre.trim().length > 0);
+}
 
 export type Categoria = {
   id: string;
@@ -47,6 +62,7 @@ export async function getProductos(empresaId: string): Promise<Producto[]> {
     ...p,
     precio_compra: Number(p.precio_compra),
     precio_venta: Number(p.precio_venta),
+    variantes: normalizarVariantes(p.variantes),
     categorias: Array.isArray(p.categorias) ? p.categorias[0] ?? null : p.categorias,
   })) as Producto[];
 }
@@ -64,6 +80,7 @@ export async function getProducto(empresaId: string, id: string): Promise<Produc
     ...data,
     precio_compra: Number(data.precio_compra),
     precio_venta: Number(data.precio_venta),
+    variantes: normalizarVariantes(data.variantes),
     categorias: Array.isArray(data.categorias) ? data.categorias[0] ?? null : data.categorias,
   } as Producto;
 }

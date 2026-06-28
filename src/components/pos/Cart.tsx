@@ -56,7 +56,7 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
         ) : (
           <ul className="flex-1 overflow-y-auto space-y-2 px-3 py-3">
             {items.map((i) => (
-              <li key={i.producto_id} className="rounded-xl bg-card p-3 shadow-sm">
+              <li key={i.lineId} className="rounded-xl bg-card p-3 shadow-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{i.nombre}</p>
@@ -65,7 +65,7 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
                     </p>
                   </div>
                   <button
-                    onClick={() => remove(i.producto_id)}
+                    onClick={() => remove(i.lineId)}
                     className="text-muted-foreground hover:text-[var(--egreso)]"
                     aria-label="Quitar"
                   >
@@ -75,7 +75,7 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
                 <div className="mt-2 flex items-center justify-between">
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => setCantidad(i.producto_id, i.cantidad - 1)}
+                      onClick={() => setCantidad(i.lineId, i.cantidad - 1)}
                       className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground"
                     >
                       <Minus className="h-4 w-4" />
@@ -84,7 +84,7 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
                       {i.cantidad}
                     </span>
                     <button
-                      onClick={() => setCantidad(i.producto_id, i.cantidad + 1)}
+                      onClick={() => setCantidad(i.lineId, i.cantidad + 1)}
                       disabled={i.cantidad >= i.stock_disponible}
                       className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground disabled:opacity-40"
                     >

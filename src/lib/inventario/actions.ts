@@ -62,6 +62,7 @@ export async function crearProducto(_prev: ActionState, formData: FormData): Pro
     stock_actual: formData.get('stock_actual') ?? '0',
     stock_minimo: formData.get('stock_minimo') ?? '5',
     activo: true,
+    variantes: formData.get('variantes'),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -86,6 +87,7 @@ export async function crearProducto(_prev: ActionState, formData: FormData): Pro
     stock_actual: parsed.data.stock_actual,
     stock_minimo: parsed.data.stock_minimo,
     activo: true,
+    variantes: parsed.data.variantes,
     imagen_url,
   });
 
@@ -114,6 +116,7 @@ export async function actualizarProducto(
     stock_actual: formData.get('stock_actual') ?? '0',
     stock_minimo: formData.get('stock_minimo') ?? '5',
     activo: formData.get('activo') !== 'off',
+    variantes: formData.get('variantes'),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -142,6 +145,7 @@ export async function actualizarProducto(
     stock_actual: parsed.data.stock_actual,
     stock_minimo: parsed.data.stock_minimo,
     activo: parsed.data.activo !== false && parsed.data.activo !== 'off',
+    variantes: parsed.data.variantes,
     updated_at: new Date().toISOString(),
   };
   if (imagen_url !== undefined) updatePayload.imagen_url = imagen_url;
