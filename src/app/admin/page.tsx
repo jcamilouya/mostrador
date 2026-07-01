@@ -12,7 +12,12 @@ export default async function AdminOverviewPage() {
   const s = calcOverview(empresas);
 
   const porVencer = empresas
-    .filter((e) => e.estado === 'trial_activo' && (e.diasRestantes ?? 99) <= 7)
+    .filter(
+      (e) =>
+        (e.estado === 'trial_activo' || e.estado === 'basico' || e.estado === 'pro') &&
+        e.diasRestantes != null &&
+        e.diasRestantes <= 7,
+    )
     .sort((a, b) => (a.diasRestantes ?? 0) - (b.diasRestantes ?? 0));
 
   return (
@@ -38,9 +43,10 @@ export default async function AdminOverviewPage() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <Kpi icon={<Building2 className="h-4 w-4" />} label="Empresas" valor={formatNumber(s.total)} sub={`+${s.nuevasMes} este mes`} />
-        <Kpi icon={<CreditCard className="h-4 w-4" />} label="Pagando" valor={formatNumber(s.pagando)} sub={`${s.porPlan.pro} pro · ${s.porPlan.basico} básico`} />
+        <Kpi icon={<CreditCard className="h-4 w-4" />} label="Pagando" valor={formatNumber(s.pagando)} sub={`${s.pagandoPro} pro · ${s.pagandoBasico} básico`} />
         <Kpi icon={<Hourglass className="h-4 w-4" />} label="En prueba" valor={formatNumber(s.trialActivos)} sub={`${s.trialPorVencer} por vencer`} color="var(--ingreso)" />
         <Kpi icon={<AlertTriangle className="h-4 w-4" />} label="Pruebas vencidas" valor={formatNumber(s.trialVencidos)} sub="sin convertir" color={s.trialVencidos > 0 ? 'var(--egreso)' : undefined} />
+        <Kpi icon={<CreditCard className="h-4 w-4" />} label="Pagos vencidos" valor={formatNumber(s.pagosVencidos)} sub="para renovar" color={s.pagosVencidos > 0 ? 'var(--egreso)' : undefined} />
         <Kpi icon={<Activity className="h-4 w-4" />} label="Activas (30d)" valor={formatNumber(s.activas)} sub="con ventas recientes" />
         <Kpi icon={<Ghost className="h-4 w-4" />} label="Sin actividad" valor={formatNumber(s.zombies)} sub="nunca vendieron" color={s.zombies > 0 ? 'var(--egreso)' : undefined} />
         <Kpi icon={<Percent className="h-4 w-4" />} label="Conversión" valor={`${s.conversion}%`} sub="prueba → pago" />
@@ -50,13 +56,13 @@ export default async function AdminOverviewPage() {
       {/* Trials por vencer */}
       <section className="rounded-3xl bg-card p-5 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">Pruebas por vencer (7 días)</h2>
-          <Link href="/admin/empresas?estado=trial_activo" className="text-xs text-muted-foreground hover:underline">
+          <h2 className="font-semibold">Por vencer (7 días)</h2>
+          <Link href="/admin/empresas" className="text-xs text-muted-foreground hover:underline">
             Ver todas
           </Link>
         </div>
         {porVencer.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Ninguna prueba vence en los próximos 7 días. 🎉</p>
+          <p className="text-sm text-muted-foreground">Nada vence en los próximos 7 días. 🎉</p>
         ) : (
           <ul className="divide-y divide-border">
             {porVencer.map((e) => (

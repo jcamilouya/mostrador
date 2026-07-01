@@ -5,10 +5,15 @@ export const ESTADO_INFO: Record<
   { label: string; color: string }
 > = {
   pro: { label: 'Pro', color: 'var(--utilidad)' },
+  pro_vencido: { label: 'Pro vencido', color: 'var(--egreso)' },
   basico: { label: 'Básico', color: 'var(--ingreso)' },
+  basico_vencido: { label: 'Básico vencido', color: 'var(--egreso)' },
   trial_activo: { label: 'En prueba', color: 'var(--ingreso)' },
   trial_vencido: { label: 'Prueba vencida', color: 'var(--egreso)' },
 };
+
+// Estados vigentes con cuenta regresiva (mostramos "· Xd").
+const CON_DIAS: EstadoSuscripcion[] = ['trial_activo', 'basico', 'pro'];
 
 export function EstadoBadge({
   estado,
@@ -19,7 +24,7 @@ export function EstadoBadge({
 }) {
   const info = ESTADO_INFO[estado];
   const sufijo =
-    estado === 'trial_activo' && diasRestantes != null ? ` · ${diasRestantes}d` : '';
+    CON_DIAS.includes(estado) && diasRestantes != null ? ` · ${diasRestantes}d` : '';
   return (
     <span
       className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"

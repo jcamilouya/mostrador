@@ -16,8 +16,9 @@ import {
   QrCode,
   Clock,
   History,
+  CreditCard,
 } from 'lucide-react';
-import { getEmpresaResumen, getAdminLog, getUltimoLogin } from '@/lib/admin/queries';
+import { getEmpresaResumen, getAdminLog, getUltimoLogin, getPagosEmpresa } from '@/lib/admin/queries';
 import { activarPro, extenderDias } from '@/lib/admin/actions';
 import { formatCOP, formatNumber } from '@/lib/utils/format';
 import { EstadoBadge, fechaCorta, haceCuanto } from '@/components/admin/ui';
@@ -42,9 +43,10 @@ export default async function AdminEmpresaPage({
   const empresa = await getEmpresaResumen(id);
   if (!empresa) notFound();
 
-  const [logs, ultimoLogin] = await Promise.all([
+  const [logs, ultimoLogin, pagos] = await Promise.all([
     getAdminLog(id),
     getUltimoLogin(empresa.usuarioId),
+    getPagosEmpresa(id),
   ]);
 
   const utilidad = empresa.ventasMonto - empresa.egresosMonto;
@@ -109,6 +111,36 @@ export default async function AdminEmpresaPage({
               <Dato label="Primera venta" valor={fechaCorta(empresa.primeraVenta)} />
               <Dato label="Última venta" valor={haceCuanto(empresa.ultimaVenta)} />
             </div>
+          </section>
+
+          {/* Pagos */}
+          <section className="rounded-3xl bg-card p-5 shadow-sm">
+            <h2 className="mb-3 flex items-center gap-1.5 font-semibold">
+              <CreditCard className="h-4 w-4" /> Pagos (Wompi)
+            </h2>
+            {pagos.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Aún no ha intentado ningún pago.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {pagos.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between gap-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="font-medium tabular-nums">
+                        {formatCOP(p.montoCentavos / 100)}
+                        <span className="ml-2 text-xs font-normal text-muted-foreground capitalize">
+                          {p.plan}
+                          {p.metodo ? ` · ${p.metodo}` : ''}
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">{fechaCorta(p.createdAt)}</p>
+                    </div>
+                    <PagoEstadoBadge estado={p.estado} />
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           {/* Notas */}
@@ -181,6 +213,27 @@ function Metric({
       <p className="mt-1 text-lg font-semibold tabular-nums">{valor}</p>
       {sub && <p className="text-xs text-muted-foreground tabular-nums">{sub}</p>}
     </div>
+  );
+}
+
+const PAGO_ESTADO: Record<string, { label: string; color: string }> = {
+  succeeded: { label: 'Aprobado', color: 'var(--ingreso)' },
+  pending: { label: 'Pendiente', color: 'var(--utilidad)' },
+  failed: { label: 'Fallido', color: 'var(--egreso)' },
+};
+
+function PagoEstadoBadge({ estado }: { estado: string }) {
+  const info = PAGO_ESTADO[estado] ?? { label: estado, color: 'var(--muted-foreground)' };
+  return (
+    <span
+      className="inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+      style={{
+        color: info.color,
+        backgroundColor: `color-mix(in oklch, ${info.color} 14%, transparent)`,
+      }}
+    >
+      {info.label}
+    </span>
   );
 }
 

@@ -14,7 +14,9 @@ const ESTADO_OPCIONES = [
   { value: 'trial_activo', label: 'En prueba' },
   { value: 'trial_vencido', label: 'Prueba vencida' },
   { value: 'pro', label: 'Pro' },
+  { value: 'pro_vencido', label: 'Pro vencido' },
   { value: 'basico', label: 'Básico' },
+  { value: 'basico_vencido', label: 'Básico vencido' },
   { value: 'activas', label: 'Activas (30d)' },
   { value: 'zombies', label: 'Sin actividad' },
 ];
