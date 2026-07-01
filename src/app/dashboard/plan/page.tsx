@@ -16,6 +16,12 @@ export default async function PlanPage() {
 
   const plan = await getPlanInfo(empresaId);
 
+  // "Tu plan actual" solo si está vigente; si venció, mostramos el botón de renovar.
+  const basicoActivo = plan.plan === 'basico' && !plan.bloqueado;
+  const proActivo = plan.plan === 'pro' && !plan.bloqueado;
+  const basicoLabel = plan.plan === 'basico' ? 'Renovar Básico' : 'Elegir Básico';
+  const proLabel = plan.plan === 'pro' ? 'Renovar Pro' : 'Mejorar a Pro';
+
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
       <header className="space-y-1">
@@ -32,15 +38,16 @@ export default async function PlanPage() {
           nombre="Básico"
           precio={PRECIOS.basico}
           features={FEATURES.basico}
-          activo={plan.plan === 'basico'}
+          activo={basicoActivo}
+          cta={<UpgradeButton plan="basico" label={basicoLabel} />}
         />
         <PlanCard
           nombre="Pro"
           precio={PRECIOS.pro}
           features={FEATURES.pro}
           destacado
-          activo={plan.plan === 'pro'}
-          cta={<UpgradeButton />}
+          activo={proActivo}
+          cta={<UpgradeButton plan="pro" label={proLabel} />}
         />
       </div>
 

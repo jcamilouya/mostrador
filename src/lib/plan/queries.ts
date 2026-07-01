@@ -36,26 +36,32 @@ export const FEATURES = {
 function calc(plan: Plan, expiraEn: string | null): PlanInfo {
   const ahora = Date.now();
   const venceMs = expiraEn ? new Date(expiraEn).getTime() : null;
+  const dias = venceMs ? Math.max(0, Math.ceil((venceMs - ahora) / 86_400_000)) : null;
+
+  // Un plan de pago SIN fecha de vencimiento se considera vigente (cortesía /
+  // asignación manual). Solo se bloquea si tiene fecha y ya pasó. El modelo es
+  // "pago que dura 30 días y se renueva" (Wompi no tiene débito automático).
+  const vencido = venceMs !== null && venceMs <= ahora;
 
   if (plan === 'pro') {
-    return { plan, expiraEn, diasRestantes: null, esPro: true, trialActivo: false, bloqueado: false };
+    return { plan, expiraEn, diasRestantes: dias, esPro: !vencido, trialActivo: false, bloqueado: vencido };
   }
 
-  if (plan === 'trial') {
-    const activo = venceMs !== null && venceMs > ahora;
-    const dias = venceMs ? Math.max(0, Math.ceil((venceMs - ahora) / 86_400_000)) : 0;
-    return {
-      plan,
-      expiraEn,
-      diasRestantes: dias,
-      esPro: activo,
-      trialActivo: activo,
-      bloqueado: !activo,
-    };
+  if (plan === 'basico') {
+    // Básico desbloquea el core (POS, inventario, etc.) pero NO las funciones Pro.
+    return { plan, expiraEn, diasRestantes: dias, esPro: false, trialActivo: false, bloqueado: vencido };
   }
 
-  // basico
-  return { plan, expiraEn, diasRestantes: null, esPro: false, trialActivo: false, bloqueado: false };
+  // trial: cuenta como Pro mientras esté vigente; al vencer, bloqueo suave.
+  const activo = venceMs !== null && venceMs > ahora;
+  return {
+    plan,
+    expiraEn,
+    diasRestantes: dias ?? 0,
+    esPro: activo,
+    trialActivo: activo,
+    bloqueado: !activo,
+  };
 }
 
 export async function getPlanInfo(empresaId: string): Promise<PlanInfo> {
