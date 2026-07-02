@@ -118,18 +118,26 @@ export function PaymentModal({
   function confirmar(metodo: MetodoPago, confirmado?: boolean) {
     setError('');
     startTransition(async () => {
-      const res = await registrarVenta({
-        metodo_pago: metodo,
-        confirmado,
-        cliente_id: cliente?.id ?? null,
-        items: items.map((i) => ({
-          producto_id: i.producto_id,
-          cantidad: i.cantidad,
-          precio_unitario: i.precio_venta,
-          precio_compra: i.precio_compra,
-          nombre: i.nombre,
-        })),
-      });
+      let res;
+      try {
+        res = await registrarVenta({
+          metodo_pago: metodo,
+          confirmado,
+          cliente_id: cliente?.id ?? null,
+          items: items.map((i) => ({
+            producto_id: i.producto_id,
+            cantidad: i.cantidad,
+            precio_unitario: i.precio_venta,
+            precio_compra: i.precio_compra,
+            nombre: i.nombre,
+          })),
+        });
+      } catch {
+        // Nunca dejar el modal colgado: si algo revienta, mostrar error claro.
+        setError('No pudimos completar la venta. Revisa tu internet e inténtalo de nuevo.');
+        setStep('error');
+        return;
+      }
       if (!res.ok) {
         setError(res.error);
         setStep('error');
