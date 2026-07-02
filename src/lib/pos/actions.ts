@@ -88,7 +88,8 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
     .single();
 
   if (ventaErr || !venta) {
-    return { ok: false, error: 'No pudimos registrar la venta. Intenta de nuevo.' };
+    console.error('[registrarVenta] ventas insert', ventaErr);
+    return { ok: false, error: `No se pudo registrar la venta: ${ventaErr?.message ?? 'error desconocido'}` };
   }
 
   // Insertar items
@@ -104,8 +105,9 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
 
   const { error: itemsErr } = await admin.from('venta_items').insert(itemsRows);
   if (itemsErr) {
+    console.error('[registrarVenta] venta_items insert', itemsErr);
     await admin.from('ventas').delete().eq('id', venta.id);
-    return { ok: false, error: 'No pudimos guardar los items de la venta.' };
+    return { ok: false, error: `No se pudieron guardar los items: ${itemsErr.message}` };
   }
 
   // Descontar stock + registrar movimiento, solo si la venta queda completada
