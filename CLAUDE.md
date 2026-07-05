@@ -30,22 +30,25 @@ SaaS de gestión financiera para PyMEs colombianas. Multi-tenant: una `empresa` 
 ```
 src/app/
   (auth)/login|register    — formularios públicos
-  auth/callback/           — intercambia code de Supabase por sesión
+  auth/callback/           — canjea code o token_hash de Supabase por sesión
+  auth/confirmado/         — pantalla "correo confirmado" (entra solo a la app)
   onboarding/              — crea empresa tras primer login
   dashboard/               — requiere auth + empresa; layout con Sidebar/BottomNav
-    pos/                   — POS, registra ventas
-    inventario/            — CRUD productos
+    pos/                   — POS, registra ventas (selector de combos por producto)
+    inventario/            — CRUD productos (+ opciones/combos por producto)
     egresos/               — CRUD gastos (+ /nuevo, /[id])
     ingresos/              — historial de ventas
     analitica/             — KPIs, top productos, horas pico, métodos de pago
     reportes/              — PDF + Excel vía /api/reportes
     clientes/              — CRUD clientes (+ /nuevo, /[id])
     configuracion/         — datos negocio + config Bre-B (incl. subir QR oficial)
-    plan/                  — trial/básico/pro
-  admin/                   — panel interno (empresas/[id]); fuera de /dashboard
+    plan/                  — trial/básico/pro (paga con Wompi; ver Pagos del plan)
+  admin/                   — super admin: métricas + control de suscripciones (ver Panel admin)
   api/
     reportes/              — genera PDF/Excel con jspdf + exceljs
     ia/leer-factura/       — Anthropic vision extrae datos de una foto de factura
+    checkout/wompi/init/   — inicia el pago del plan (crea `pagos` + firma de integridad)
+    webhook/wompi/         — ÚNICO que activa el plan tras pago aprobado
     webhook/whatsapp-invoice/ — recibe egresos del bot WhatsApp externo
     webhook/whatsapp/      — webhook del canal WhatsApp
     webhook/bancolombia/   — confirma ventas Bre-B pagadas (conciliación, producción)
@@ -55,6 +58,8 @@ src/app/
 ### Flujo de autenticación y multi-tenant
 
 `middleware.ts` protege todas las rutas `/dashboard/*` y `/onboarding/*`. Si el usuario tiene sesión pero no tiene `empresa_id` en la tabla `usuarios`, redirige a `/onboarding`. El `DashboardLayout` hace una segunda verificación server-side para asegurar que la empresa existe.
+
+**Confirmación de correo:** `signUp` manda `emailRedirectTo` a `/auth/callback?next=/onboarding&confirmar=1`. El callback maneja tanto `code` (PKCE/OAuth) como `token_hash`+`type` (link de correo, funciona en otro dispositivo) y, si es confirmación, redirige a `/auth/confirmado` (mensaje amigable + auto-entra). Requiere Site URL + Redirect URLs correctos en el panel de Supabase.
 
 ### Patrón Supabase (CRÍTICO)
 
@@ -84,7 +89,13 @@ export async function miAccion(prev: State, formData: FormData): Promise<State> 
 
 ### Schema de BD
 
-Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `ventas`, `venta_items`, `egresos`, `movimientos_inventario`. También `clientes`, `pagos` + `wompi_eventos` (Wompi), `egresos_pendientes_whatsapp` (bot). El `empresa_id` es la clave de aislamiento en todas las tablas. Ver `supabase/schema.sql` y `supabase/migrations/` para el schema completo.
+Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `ventas`, `venta_items`, `egresos`, `movimientos_inventario`. También `clientes`, `pagos` + `wompi_eventos` (Wompi), `egresos_pendientes_whatsapp` (bot), `admin_log` (auditoría del super admin). El `empresa_id` es la clave de aislamiento en todas las tablas. Ver `supabase/schema.sql` y `supabase/migrations/` para el schema completo.
+
+Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos).
+
+### POS, productos y combos
+
+Un producto puede tener **opciones/combos** en `productos.variantes` (JSONB: `[{ nombre, precio }]`; cada opción tiene su precio **completo**, no un delta). `ProductForm` los edita (input hidden serializado a JSON, validado por `variantesSchema` en `lib/inventario/schemas.ts`). En el POS (`ProductGrid`), tocar un producto con variantes abre un selector (opción "Sencillo" con `precio_venta` base + cada variante); sin variantes se agrega directo. El carrito (`stores/cart-store.ts`) llavea cada línea por `lineId` (`producto_id` o `producto_id::variante`) para que dos opciones del mismo producto sean líneas distintas; `venta_items` guarda el nombre y precio ya resueltos (sin cambios de schema). El stock es a nivel de producto (las variantes lo comparten).
 
 ### Realtime
 
@@ -92,7 +103,7 @@ Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `venta
 
 ### Plan y gating
 
-`lib/plan/queries.ts` exporta `getPlanInfo(empresaId)`. Devuelve `{ esPro, bloqueado, diasRestantes }`. Trial activo cuenta como Pro. Vencido → `bloqueado = true` → el POS rechaza ventas nuevas (soft block). La Analítica, Reportes y Bre-B están gatekeadas detrás de `esPro`. Precios en `PRECIOS` (COP/mes).
+`lib/plan/queries.ts` exporta `getPlanInfo(empresaId)`. Devuelve `{ plan, esPro, bloqueado, diasRestantes, trialActivo }`. **Todos los planes respetan `plan_expira_en`** (modelo de pago que renueva 30 días): trial activo cuenta como Pro; `basico`/`pro` desbloquean el core pero al vencer → `bloqueado = true` (soft block: el POS rechaza ventas nuevas). Un plan de pago **sin fecha** se considera vigente (cortesía/asignación manual). `basico` nunca es `esPro`; solo `pro` y trial activo lo son. La Analítica, Reportes y Bre-B están gatekeadas detrás de `esPro`. El POS muestra Básico normal; solo las funciones Pro piden mejorar. Precios en `PRECIOS` (COP/mes). El plan Básico también es pagable (`UpgradeButton plan="basico"`).
 
 ### Pagos del plan (Wompi)
 
@@ -103,6 +114,10 @@ Pasarela de pagos colombiana. Wompi **no tiene débito automático** → modelo 
 3. `POST /api/webhook/wompi` **es el único que activa el plan**: verifica el checksum (`lib/payments/wompi.ts`, `crypto.timingSafeEqual`), ventana de tiempo e idempotencia (`wompi_eventos`), y al `APPROVED` pone `empresas.plan` + extiende `plan_expira_en` +30 días (apila renovaciones).
 
 **Dormido sin llaves:** si faltan `WOMPI_*`, `init` responde `{ disponible: false }` sin tocar la BD — seguro de desplegar. Sandbox vs producción se decide por el prefijo de `WOMPI_PUBLIC_KEY` (`pub_test_` vs `pub_prod_`). Patrones de seguridad basados en el plugin externo *PagoKit*.
+
+### Panel de super admin (`/admin`)
+
+Back-office del SaaS, fuera de `/dashboard`, protegido por `requireSuperAdmin` (`lib/admin/auth.ts`). Usa `createAdminClient()` (bypasea RLS) y el RPC `admin_empresas_resumen` para agregar métricas de todas las empresas. `lib/admin/queries.ts` deriva por empresa el `EstadoSuscripcion` (`trial_activo`/`trial_vencido`/`basico`/`basico_vencido`/`pro`/`pro_vencido`) y los días restantes según `plan_expira_en` — **debe coincidir con la lógica de `lib/plan/queries.ts`** (si cambia una, cambiar la otra). El MRR cuenta solo planes vigentes. La ficha de cada empresa muestra uso, historial de pagos Wompi (`getPagosEmpresa`) y permite cambiar plan / activar Pro / extender días (`lib/admin/actions.ts`), todo auditado en `admin_log`.
 
 ### Bre-B (cobros QR) — CRÍTICO
 
@@ -157,5 +172,5 @@ BANCOLOMBIA_WEBHOOK_SECRET       — firma del webhook de conciliación
 ### Pendiente de construir
 
 - **WhatsApp en producción**: el bot está implementado (`/api/webhook/whatsapp` + `lib/whatsapp/`); falta dar de alta el número en **Meta WhatsApp Business** y poner los tokens. Es configuración/aprobación, no código.
-- **Activar Wompi**: la pasarela está integrada (ver *Pagos del plan*); falta crear la cuenta Wompi, correr `supabase/migrations/004_pagos.sql` y poner las llaves `WOMPI_*` (sandbox → producción).
-- **Bre-B API Bancolombia**: integrada pero inactiva; requiere acceso de **producción** + servidor autorizado en el WAF + comercio con cuenta Bancolombia. Ver sección Bre-B.
+- **Wompi a producción**: integrada y corriendo con llaves de **prueba** (`pub_test_`) + webhook configurado. Falta la aprobación de producción de Wompi y cambiar a llaves `pub_prod_` (recordar **Redeploy** en Vercel al cambiar env).
+- **Bre-B API Bancolombia**: los productos *QR Code Information* + *QR Payments Information* ya fueron **aprobados** en el portal. Para activarla faltan: (a) credenciales de producción (`BANCOLOMBIA_*`); (b) cambiar `bancolombia.ts` para leer el cert mTLS desde **variable de entorno** en vez de archivo (los `.secrets/` no se despliegan en Vercel); (c) confirmar con Bancolombia si Mostrador puede generar el QR de las llaves **de sus comercios** (rol agregador/partner) o solo de la propia; (d) servidor autorizado en el WAF. El cobro por **QR universal subido** ya funciona para cualquier banco.
