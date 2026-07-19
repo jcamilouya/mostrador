@@ -91,3 +91,43 @@ export async function getRecetaDeProducto(
     };
   });
 }
+
+export type ResumenReceta = {
+  /** Costo real de 1 unidad del producto = Σ(cantidad × costo del insumo). */
+  costoReceta: number;
+  /** Cuántas unidades del producto alcanzan con el stock de ingredientes (min). */
+  disponibles: number | null;
+};
+
+/**
+ * Para todos los productos con receta: costo real por unidad + cuántas se pueden
+ * hacer con el stock actual de ingredientes. Los productos sin receta no aparecen.
+ * Devuelve `{}` si aún no existe la tabla (seguro antes de correr la migración).
+ */
+export async function getResumenRecetas(
+  empresaId: string,
+): Promise<Record<string, ResumenReceta>> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('producto_receta')
+    .select('producto_id, cantidad, insumos ( costo_unitario, stock_actual )')
+    .eq('empresa_id', empresaId);
+
+  const map: Record<string, ResumenReceta> = {};
+  for (const r of data ?? []) {
+    const ins = (r as Record<string, unknown>).insumos as Record<string, unknown> | null;
+    const cantidad = Number(r.cantidad) || 0;
+    const costo = Number(ins?.costo_unitario) || 0;
+    const stock = Number(ins?.stock_actual) || 0;
+    const pid = r.producto_id as string;
+
+    const cur = map[pid] ?? { costoReceta: 0, disponibles: null };
+    cur.costoReceta += cantidad * costo;
+    if (cantidad > 0) {
+      const puede = Math.floor(stock / cantidad);
+      cur.disponibles = cur.disponibles === null ? puede : Math.min(cur.disponibles, puede);
+    }
+    map[pid] = cur;
+  }
+  return map;
+}

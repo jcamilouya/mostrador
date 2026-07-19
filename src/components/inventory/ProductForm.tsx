@@ -19,8 +19,9 @@ import type { Categoria, Producto } from '@/lib/inventario/queries';
 import type { ActionState } from '@/lib/inventario/actions';
 import { crearCategoria } from '@/lib/inventario/actions';
 import { unidadCorta } from '@/lib/insumos/units';
+import { formatCOP } from '@/lib/utils/format';
 
-export type InsumoOpcion = { id: string; nombre: string; unidad: string };
+export type InsumoOpcion = { id: string; nombre: string; unidad: string; costo_unitario: number };
 
 function SubmitButton({ creando }: { creando: boolean }) {
   const { pending } = useFormStatus();
@@ -153,6 +154,16 @@ export function ProductForm({
   function quitarReceta(idx: number) {
     setReceta((prev) => prev.filter((_, i) => i !== idx));
   }
+
+  // Costo real de la receta (Σ cantidad × costo del insumo) y ganancia en vivo.
+  const [precioVenta, setPrecioVenta] = useState(String(producto?.precio_venta ?? ''));
+  const costoReceta = recetaLimpia.reduce((acc, r) => {
+    const ins = insumos.find((x) => x.id === r.insumo_id);
+    return acc + (ins ? r.cantidad * ins.costo_unitario : 0);
+  }, 0);
+  const precioNum = Number(precioVenta) || 0;
+  const gananciaReceta = precioNum - costoReceta;
+  const margenPct = precioNum > 0 ? Math.round((gananciaReceta / precioNum) * 100) : 0;
 
   const [mostrarNuevaCat, setMostrarNuevaCat] = useState(false);
   const [colorCat, setColorCat] = useState('#6366f1');
@@ -573,6 +584,33 @@ export function ProductForm({
                 >
                   <Plus className="h-4 w-4" /> Agregar ingrediente
                 </button>
+
+                {recetaLimpia.length > 0 &&
+                  (costoReceta > 0 ? (
+                    <div className="rounded-2xl bg-secondary/50 p-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Costo de la receta (por unidad)</span>
+                        <span className="font-semibold tabular-nums">{formatCOP(costoReceta)}</span>
+                      </div>
+                      {precioNum > 0 && (
+                        <div className="mt-1 flex items-center justify-between">
+                          <span className="text-muted-foreground">Ganancia por unidad</span>
+                          <span
+                            className={`font-semibold tabular-nums ${
+                              gananciaReceta >= 0 ? 'text-[var(--ingreso)]' : 'text-[var(--egreso)]'
+                            }`}
+                          >
+                            {formatCOP(gananciaReceta)} ({margenPct}%)
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Ponle costo a tus ingredientes (en la sección Ingredientes) para ver cuánto te
+                      cuesta hacer este producto y cuánto ganas.
+                    </p>
+                  ))}
               </>
             )}
           </div>
@@ -608,7 +646,8 @@ export function ProductForm({
                 type="number"
                 step="100"
                 min="0"
-                defaultValue={producto?.precio_venta ?? 0}
+                value={precioVenta}
+                onChange={(e) => setPrecioVenta(e.target.value)}
                 required
                 className="rounded-xl h-11 tabular-nums"
               />

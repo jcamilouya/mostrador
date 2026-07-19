@@ -8,15 +8,19 @@ import { Button } from '@/components/ui/button';
 import { StockBadge } from './StockBadge';
 import { formatCOP } from '@/lib/utils/format';
 import type { Producto, Categoria } from '@/lib/inventario/queries';
+import type { ResumenReceta } from '@/lib/insumos/queries';
 
 type ViewMode = 'tabla' | 'grid';
+type Recetas = Record<string, ResumenReceta>;
 
 export function InventoryList({
   productos,
   categorias,
+  recetas = {},
 }: {
   productos: Producto[];
   categorias: Categoria[];
+  recetas?: Recetas;
 }) {
   const [query, setQuery] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState<string>('todas');
@@ -115,9 +119,9 @@ export function InventoryList({
       {filtrados.length === 0 ? (
         <EmptyState hayProductos={productos.length > 0} />
       ) : view === 'tabla' ? (
-        <ProductTable productos={filtrados} />
+        <ProductTable productos={filtrados} recetas={recetas} />
       ) : (
-        <ProductGrid productos={filtrados} />
+        <ProductGrid productos={filtrados} recetas={recetas} />
       )}
     </div>
   );
@@ -154,7 +158,7 @@ function CategoriaChip({
   );
 }
 
-function ProductTable({ productos }: { productos: Producto[] }) {
+function ProductTable({ productos, recetas }: { productos: Producto[]; recetas: Recetas }) {
   return (
     <div className="overflow-hidden rounded-3xl bg-card shadow-sm">
       <table className="w-full text-sm">
@@ -169,7 +173,9 @@ function ProductTable({ productos }: { productos: Producto[] }) {
         </thead>
         <tbody className="divide-y">
           {productos.map((p) => {
-            const margen = p.precio_venta - p.precio_compra;
+            const info = recetas[p.id];
+            const costo = info ? info.costoReceta : p.precio_compra;
+            const margen = p.precio_venta - costo;
             return (
               <tr key={p.id} className="hover:bg-secondary/30">
                 <td className="px-4 py-3">
@@ -201,9 +207,16 @@ function ProductTable({ productos }: { productos: Producto[] }) {
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums text-[var(--ingreso)]">
                   {formatCOP(margen)}
+                  {info && <span className="ml-1 text-[10px] text-muted-foreground">receta</span>}
                 </td>
                 <td className="px-4 py-3">
-                  <StockBadge actual={p.stock_actual} minimo={p.stock_minimo} />
+                  {info && info.disponibles !== null ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium">
+                      🍽️ Alcanza: {info.disponibles}
+                    </span>
+                  ) : (
+                    <StockBadge actual={p.stock_actual} minimo={p.stock_minimo} />
+                  )}
                 </td>
               </tr>
             );
@@ -214,10 +227,12 @@ function ProductTable({ productos }: { productos: Producto[] }) {
   );
 }
 
-function ProductGrid({ productos }: { productos: Producto[] }) {
+function ProductGrid({ productos, recetas }: { productos: Producto[]; recetas: Recetas }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-      {productos.map((p) => (
+      {productos.map((p) => {
+        const info = recetas[p.id];
+        return (
         <Link
           key={p.id}
           href={`/dashboard/inventario/${p.id}`}
@@ -241,10 +256,17 @@ function ProductGrid({ productos }: { productos: Producto[] }) {
             {formatCOP(p.precio_venta)}
           </p>
           <div className="mt-2">
-            <StockBadge actual={p.stock_actual} minimo={p.stock_minimo} />
+            {info && info.disponibles !== null ? (
+              <span className="text-xs font-medium text-muted-foreground">
+                🍽️ Alcanza: {info.disponibles}
+              </span>
+            ) : (
+              <StockBadge actual={p.stock_actual} minimo={p.stock_minimo} />
+            )}
           </div>
         </Link>
-      ))}
+        );
+      })}
     </div>
   );
 }

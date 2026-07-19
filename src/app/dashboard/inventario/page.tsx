@@ -9,6 +9,7 @@ import {
   getEmpresaIdDelUsuario,
   getProductos,
 } from '@/lib/inventario/queries';
+import { getResumenRecetas } from '@/lib/insumos/queries';
 
 export const metadata: Metadata = {
   title: 'Productos — Mostrador',
@@ -18,9 +19,10 @@ export default async function InventarioPage() {
   const empresaId = await getEmpresaIdDelUsuario();
   if (!empresaId) redirect('/onboarding');
 
-  const [productos, categorias] = await Promise.all([
+  const [productos, categorias, recetas] = await Promise.all([
     getProductos(empresaId),
     getCategorias(empresaId),
+    getResumenRecetas(empresaId),
   ]);
 
   return (
@@ -42,7 +44,7 @@ export default async function InventarioPage() {
         </Link>
       </header>
 
-      <InventoryList productos={productos} categorias={categorias} />
+      <InventoryList productos={productos} categorias={categorias} recetas={recetas} />
     </div>
   );
 }
