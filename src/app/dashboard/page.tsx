@@ -9,10 +9,12 @@ import {
   Clock,
   AlertTriangle,
   ArrowRight,
+  Carrot,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
 import { getDashboardStats } from '@/lib/dashboard/queries';
+import { contarInsumosBajos } from '@/lib/insumos/queries';
 import { getBalanceDiario } from '@/lib/analitica/queries';
 import { RevenueChart } from '@/components/dashboard/RevenueChart';
 import { WelcomeGuide } from '@/components/dashboard/WelcomeGuide';
@@ -35,9 +37,10 @@ export default async function DashboardHome() {
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const [stats, balance] = await Promise.all([
+  const [stats, balance, insumosBajos] = await Promise.all([
     getDashboardStats(empresaId),
     getBalanceDiario(empresaId, 30),
+    contarInsumosBajos(empresaId),
   ]);
 
   const nombre =
@@ -169,6 +172,23 @@ export default async function DashboardHome() {
                 </p>
               </div>
             </div>
+          )}
+
+          {insumosBajos > 0 && (
+            <Link
+              href="/dashboard/insumos"
+              className="mt-3 flex items-center gap-3 rounded-2xl bg-[var(--egreso)]/10 p-4 transition-colors hover:bg-[var(--egreso)]/15"
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--egreso)]/20">
+                <Carrot className="h-5 w-5 text-[var(--egreso)]" />
+              </span>
+              <div className="flex-1">
+                <p className="font-semibold text-[var(--egreso)]">
+                  {insumosBajos} ingrediente{insumosBajos === 1 ? '' : 's'} por agotarse
+                </p>
+                <p className="text-xs text-muted-foreground">Toca para reponer.</p>
+              </div>
+            </Link>
           )}
         </div>
       </section>

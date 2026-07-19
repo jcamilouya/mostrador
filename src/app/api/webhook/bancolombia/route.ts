@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { descontarIngredientesPorVenta } from '@/lib/insumos/consumo';
 
 /**
  * Webhook de notificaciones de pago de Bancolombia Cobros QR.
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
   // Buscar la venta por breb_transaccion_id
   const { data: venta } = await admin
     .from('ventas')
-    .select('id, empresa_id, estado')
+    .select('id, empresa_id, estado, numero_venta')
     .eq('breb_transaccion_id', transaccionId)
     .eq('estado', 'pendiente')
     .maybeSingle();
@@ -104,6 +105,17 @@ export async function POST(req: Request) {
       notas: `Venta confirmada por Bancolombia QR (${transaccionId})`,
     });
   }
+
+  // Descontar ingredientes de la venta confirmada (según recetas).
+  await descontarIngredientesPorVenta(
+    admin,
+    venta.empresa_id,
+    venta.id,
+    venta.numero_venta ?? '',
+    (items ?? [])
+      .filter((it) => it.producto_id)
+      .map((it) => ({ producto_id: it.producto_id as string, cantidad: it.cantidad })),
+  );
 
   return NextResponse.json({ ok: true });
 }

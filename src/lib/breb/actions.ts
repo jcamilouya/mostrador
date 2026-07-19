@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { descontarIngredientesPorVenta } from '@/lib/insumos/consumo';
 import { configuracionSchema } from './schemas';
 
 export type ConfigState = { ok?: boolean; error?: string };
@@ -124,6 +125,17 @@ export async function confirmarVentaBreb(ventaId: string): Promise<ConfirmarResu
       notas: `Venta #${venta.numero_venta} (Bre-B confirmada)`,
     });
   }
+
+  // Descontar ingredientes de la venta confirmada (según recetas).
+  await descontarIngredientesPorVenta(
+    admin,
+    empresaId,
+    ventaId,
+    venta.numero_venta,
+    (items ?? [])
+      .filter((it) => it.producto_id)
+      .map((it) => ({ producto_id: it.producto_id as string, cantidad: it.cantidad })),
+  );
 
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/pos');

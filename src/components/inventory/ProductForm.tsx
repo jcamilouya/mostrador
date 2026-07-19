@@ -14,10 +14,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Camera, Check, Loader2, Plus, Save, ArrowLeft, X, Layers, Trash2 } from 'lucide-react';
+import { Camera, Check, Loader2, Plus, Save, ArrowLeft, X, Layers, Trash2, Carrot } from 'lucide-react';
 import type { Categoria, Producto } from '@/lib/inventario/queries';
 import type { ActionState } from '@/lib/inventario/actions';
 import { crearCategoria } from '@/lib/inventario/actions';
+import { unidadCorta } from '@/lib/insumos/units';
+
+export type InsumoOpcion = { id: string; nombre: string; unidad: string };
 
 function SubmitButton({ creando }: { creando: boolean }) {
   const { pending } = useFormStatus();
@@ -96,10 +99,14 @@ export function ProductForm({
   action,
   categorias,
   producto,
+  insumos = [],
+  recetaInicial = [],
 }: {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   categorias: Categoria[];
   producto?: Producto;
+  insumos?: InsumoOpcion[];
+  recetaInicial?: { insumo_id: string; cantidad: number }[];
 }) {
   const [state, formAction] = useActionState(action, {});
 
@@ -126,6 +133,25 @@ export function ProductForm({
   }
   function quitarVariante(idx: number) {
     setVariantes((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  // Receta: ingredientes que consume 1 unidad del producto.
+  const [receta, setReceta] = useState<{ insumo_id: string; cantidad: string }[]>(
+    recetaInicial.map((r) => ({ insumo_id: r.insumo_id, cantidad: String(r.cantidad) })),
+  );
+  const recetaLimpia = receta
+    .filter((r) => r.insumo_id && Number(r.cantidad) > 0)
+    .map((r) => ({ insumo_id: r.insumo_id, cantidad: Number(r.cantidad) }));
+  const insumoUnidad = (id: string) => insumos.find((x) => x.id === id)?.unidad ?? '';
+
+  function agregarReceta() {
+    setReceta((prev) => [...prev, { insumo_id: '', cantidad: '' }]);
+  }
+  function actualizarReceta(idx: number, campo: 'insumo_id' | 'cantidad', valor: string) {
+    setReceta((prev) => prev.map((r, i) => (i === idx ? { ...r, [campo]: valor } : r)));
+  }
+  function quitarReceta(idx: number) {
+    setReceta((prev) => prev.filter((_, i) => i !== idx));
   }
 
   const [mostrarNuevaCat, setMostrarNuevaCat] = useState(false);
@@ -197,6 +223,8 @@ export function ProductForm({
 
       {/* Opciones / combos serializadas a JSON */}
       <input type="hidden" name="variantes" value={JSON.stringify(variantesLimpias)} />
+      {/* Receta (ingredientes) serializada a JSON */}
+      <input type="hidden" name="receta" value={JSON.stringify(recetaLimpia)} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Columna principal */}
@@ -470,6 +498,82 @@ export function ProductForm({
               <p className="text-xs text-muted-foreground">
                 Si no agregas opciones, el producto se vende solo con su precio normal.
               </p>
+            )}
+          </div>
+
+          {/* Receta / ingredientes */}
+          <div className="rounded-3xl bg-card p-6 shadow-sm space-y-4">
+            <div>
+              <h2 className="flex items-center gap-2 font-semibold">
+                <Carrot className="h-4 w-4" /> Receta / Ingredientes
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Qué ingredientes y cuánto usa <strong>1 unidad</strong> de este producto. Al
+                venderlo, se descuentan solos del inventario de ingredientes.
+              </p>
+            </div>
+
+            {insumos.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Primero crea ingredientes en{' '}
+                <Link href="/dashboard/insumos" className="text-primary underline">
+                  Ingredientes
+                </Link>{' '}
+                y vuelve aquí para armar la receta.
+              </p>
+            ) : (
+              <>
+                {receta.length > 0 && (
+                  <div className="space-y-2">
+                    {receta.map((r, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_7rem_2.5rem] items-center gap-2">
+                        <select
+                          value={r.insumo_id}
+                          onChange={(e) => actualizarReceta(idx, 'insumo_id', e.target.value)}
+                          className="h-11 rounded-xl border border-border bg-background px-3 text-sm"
+                        >
+                          <option value="">Elige ingrediente…</option>
+                          {insumos.map((ins) => (
+                            <option key={ins.id} value={ins.id}>
+                              {ins.nombre}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="relative">
+                          <Input
+                            value={r.cantidad}
+                            onChange={(e) => actualizarReceta(idx, 'cantidad', e.target.value)}
+                            type="number"
+                            step="any"
+                            min="0"
+                            placeholder="Cant."
+                            className="rounded-xl h-11 tabular-nums pr-9"
+                          />
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                            {unidadCorta(insumoUnidad(r.insumo_id))}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => quitarReceta(idx)}
+                          className="flex h-11 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
+                          aria-label="Quitar ingrediente"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={agregarReceta}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-dashed px-3 py-2 text-sm text-primary hover:bg-primary/10 transition-colors"
+                >
+                  <Plus className="h-4 w-4" /> Agregar ingrediente
+                </button>
+              </>
             )}
           </div>
         </div>

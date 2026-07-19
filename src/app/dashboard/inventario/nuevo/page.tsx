@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { ProductForm } from '@/components/inventory/ProductForm';
 import { getCategorias, getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
+import { getInsumos } from '@/lib/insumos/queries';
 import { crearProducto } from '@/lib/inventario/actions';
 
 export const metadata: Metadata = {
@@ -12,7 +13,10 @@ export default async function NuevoProductoPage() {
   const empresaId = await getEmpresaIdDelUsuario();
   if (!empresaId) redirect('/onboarding');
 
-  const categorias = await getCategorias(empresaId);
+  const [categorias, insumos] = await Promise.all([
+    getCategorias(empresaId),
+    getInsumos(empresaId),
+  ]);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6">
@@ -23,7 +27,11 @@ export default async function NuevoProductoPage() {
         </p>
       </header>
 
-      <ProductForm action={crearProducto} categorias={categorias} />
+      <ProductForm
+        action={crearProducto}
+        categorias={categorias}
+        insumos={insumos.map((i) => ({ id: i.id, nombre: i.nombre, unidad: i.unidad }))}
+      />
     </div>
   );
 }

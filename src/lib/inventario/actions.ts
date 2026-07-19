@@ -4,9 +4,27 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { reemplazarReceta } from '@/lib/insumos/consumo';
 import { productoSchema, categoriaSchema } from './schemas';
 
 export type ActionState = { error?: string; ok?: boolean };
+
+/** Lee el campo `receta` (JSON) del formulario de producto. */
+function parseReceta(raw: FormDataEntryValue | null): { insumo_id: string; cantidad: number }[] {
+  if (typeof raw !== 'string' || !raw) return [];
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter(
+        (x): x is { insumo_id: string; cantidad: number } =>
+          !!x && typeof x.insumo_id === 'string' && Number(x.cantidad) > 0,
+      )
+      .map((x) => ({ insumo_id: x.insumo_id, cantidad: Number(x.cantidad) }));
+  } catch {
+    return [];
+  }
+}
 
 async function requireEmpresaId(): Promise<{ empresaId: string; userId: string } | null> {
   const supabase = await createClient();
@@ -75,23 +93,29 @@ export async function crearProducto(_prev: ActionState, formData: FormData): Pro
   }
 
   const admin = createAdminClient();
-  const { error } = await admin.from('productos').insert({
-    empresa_id: session.empresaId,
-    nombre: parsed.data.nombre,
-    descripcion: parsed.data.descripcion || null,
-    sku: parsed.data.sku || generarSku(parsed.data.nombre),
-    codigo_barras: parsed.data.codigo_barras || null,
-    categoria_id: parsed.data.categoria_id || null,
-    precio_compra: parsed.data.precio_compra,
-    precio_venta: parsed.data.precio_venta,
-    stock_actual: parsed.data.stock_actual,
-    stock_minimo: parsed.data.stock_minimo,
-    activo: true,
-    variantes: parsed.data.variantes,
-    imagen_url,
-  });
+  const { data: nuevo, error } = await admin
+    .from('productos')
+    .insert({
+      empresa_id: session.empresaId,
+      nombre: parsed.data.nombre,
+      descripcion: parsed.data.descripcion || null,
+      sku: parsed.data.sku || generarSku(parsed.data.nombre),
+      codigo_barras: parsed.data.codigo_barras || null,
+      categoria_id: parsed.data.categoria_id || null,
+      precio_compra: parsed.data.precio_compra,
+      precio_venta: parsed.data.precio_venta,
+      stock_actual: parsed.data.stock_actual,
+      stock_minimo: parsed.data.stock_minimo,
+      activo: true,
+      variantes: parsed.data.variantes,
+      imagen_url,
+    })
+    .select('id')
+    .single();
 
-  if (error) return { error: 'No pudimos guardar el producto. Intenta de nuevo.' };
+  if (error || !nuevo) return { error: 'No pudimos guardar el producto. Intenta de nuevo.' };
+
+  await reemplazarReceta(admin, session.empresaId, nuevo.id, parseReceta(formData.get('receta')));
 
   revalidatePath('/dashboard/inventario');
   redirect('/dashboard/inventario');
@@ -157,6 +181,8 @@ export async function actualizarProducto(
     .eq('empresa_id', session.empresaId);
 
   if (error) return { error: 'No pudimos actualizar el producto.' };
+
+  await reemplazarReceta(admin, session.empresaId, id, parseReceta(formData.get('receta')));
 
   revalidatePath('/dashboard/inventario');
   redirect('/dashboard/inventario');

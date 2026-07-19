@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPlanInfo } from '@/lib/plan/queries';
+import { descontarIngredientesPorVenta } from '@/lib/insumos/consumo';
 import type { VentaResult } from './types';
 
 const itemSchema = z.object({
@@ -136,6 +137,15 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
         notas: `Venta #${venta.numero_venta}`,
       });
     }
+
+    // Descontar los ingredientes que consumió la venta (según recetas).
+    await descontarIngredientesPorVenta(
+      admin,
+      empresaId,
+      venta.id,
+      venta.numero_venta,
+      parsed.data.items.map((i) => ({ producto_id: i.producto_id, cantidad: i.cantidad })),
+    );
   }
 
   // Acumular compras del cliente (si se asoció uno y la venta quedó completada).

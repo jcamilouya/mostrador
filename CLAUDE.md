@@ -89,13 +89,17 @@ export async function miAccion(prev: State, formData: FormData): Promise<State> 
 
 ### Schema de BD
 
-Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `ventas`, `venta_items`, `egresos`, `movimientos_inventario`. También `clientes`, `pagos` + `wompi_eventos` (Wompi), `egresos_pendientes_whatsapp` (bot), `admin_log` (auditoría del super admin). El `empresa_id` es la clave de aislamiento en todas las tablas. Ver `supabase/schema.sql` y `supabase/migrations/` para el schema completo.
+Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `ventas`, `venta_items`, `egresos`, `movimientos_inventario`. También `clientes`, `insumos` + `producto_receta` + `movimientos_insumos` (recetas), `pagos` + `wompi_eventos` (Wompi), `egresos_pendientes_whatsapp` (bot), `admin_log` (auditoría del super admin). El `empresa_id` es la clave de aislamiento en todas las tablas. Ver `supabase/schema.sql` y `supabase/migrations/` para el schema completo.
 
-Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos).
+Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos), `006_insumos` (ingredientes + recetas).
 
 ### POS, productos y combos
 
 Un producto puede tener **opciones/combos** en `productos.variantes` (JSONB: `[{ nombre, precio }]`; cada opción tiene su precio **completo**, no un delta). `ProductForm` los edita (input hidden serializado a JSON, validado por `variantesSchema` en `lib/inventario/schemas.ts`). En el POS (`ProductGrid`), tocar un producto con variantes abre un selector (opción "Sencillo" con `precio_venta` base + cada variante); sin variantes se agrega directo. El carrito (`stores/cart-store.ts`) llavea cada línea por `lineId` (`producto_id` o `producto_id::variante`) para que dos opciones del mismo producto sean líneas distintas; `venta_items` guarda el nombre y precio ya resueltos (sin cambios de schema). El stock es a nivel de producto (las variantes lo comparten).
+
+### Insumos y recetas (inventario de ingredientes)
+
+Dos niveles de inventario: **productos** (lo que se vende) e **insumos** (materia prima: pan, carne…). Un producto puede tener **receta** en `producto_receta` (`{insumo_id, cantidad}` por 1 unidad). `lib/insumos/units.ts` maneja unidades con conversión por dimensión (masa g/kg/lb, volumen ml/L, conteo unidad); el stock del insumo se guarda en su unidad y se convierte al agregar compras. `lib/insumos/consumo.ts` (helpers, **NO** server action) centraliza `descontarIngredientesPorVenta` / `devolverIngredientesPorVenta` / `reemplazarReceta`. **El descuento de ingredientes está enganchado en las 3 rutas que completan una venta** (`pos/actions.registrarVenta`, `breb/actions.confirmarVentaBreb`, `webhook/bancolombia`) y la devolución en `ingresos/actions.anularVenta` — si tocas una, revisa las otras. Migración `006_insumos`. Las queries degradan a `[]` si la tabla no existe (seguro de desplegar antes de correr la migración). UI: `/dashboard/insumos` + sección "Receta" en `ProductForm`; alerta de bajo stock en el dashboard. **Falta (fases 2/3):** leer ingredientes de facturas de compra con IA, y costo/margen real por producto.
 
 ### Realtime
 

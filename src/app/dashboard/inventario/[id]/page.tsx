@@ -7,6 +7,7 @@ import {
   getEmpresaIdDelUsuario,
   getProducto,
 } from '@/lib/inventario/queries';
+import { getInsumos, getRecetaDeProducto } from '@/lib/insumos/queries';
 import { actualizarProducto } from '@/lib/inventario/actions';
 
 export const metadata: Metadata = {
@@ -22,9 +23,11 @@ export default async function EditarProductoPage({
   if (!empresaId) redirect('/onboarding');
 
   const { id } = await params;
-  const [producto, categorias] = await Promise.all([
+  const [producto, categorias, insumos, receta] = await Promise.all([
     getProducto(empresaId, id),
     getCategorias(empresaId),
+    getInsumos(empresaId),
+    getRecetaDeProducto(empresaId, id),
   ]);
 
   if (!producto) notFound();
@@ -45,6 +48,8 @@ export default async function EditarProductoPage({
         action={accionBindeada}
         categorias={categorias}
         producto={producto}
+        insumos={insumos.map((i) => ({ id: i.id, nombre: i.nombre, unidad: i.unidad }))}
+        recetaInicial={receta.map((r) => ({ insumo_id: r.insumo_id, cantidad: r.cantidad }))}
       />
     </div>
   );

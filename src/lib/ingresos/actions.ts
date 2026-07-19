@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { devolverIngredientesPorVenta } from '@/lib/insumos/consumo';
 
 export type VentaItemDetalle = {
   id: string;
@@ -134,10 +135,22 @@ export async function anularVenta(ventaId: string): Promise<AnularResult> {
         notas: `Anulación venta #${venta.numero_venta} (stock restaurado)`,
       });
     }
+
+    // Devolver también los ingredientes que había consumido la venta.
+    await devolverIngredientesPorVenta(
+      admin,
+      empresaId,
+      ventaId,
+      venta.numero_venta,
+      items
+        .filter((it) => it.producto_id)
+        .map((it) => ({ producto_id: it.producto_id as string, cantidad: Number(it.cantidad) || 0 })),
+    );
   }
 
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/ingresos');
   revalidatePath('/dashboard/inventario');
+  revalidatePath('/dashboard/insumos');
   return { ok: true };
 }
