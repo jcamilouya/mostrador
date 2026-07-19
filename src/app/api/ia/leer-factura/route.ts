@@ -35,7 +35,7 @@ export async function POST(req: Request) {
 
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5',
-    max_tokens: 500,
+    max_tokens: 1200,
     messages: [{
       role: 'user',
       content: [
@@ -53,9 +53,16 @@ Analiza esta imagen y responde SOLO con un JSON con este formato exacto:
   "fecha": "YYYY-MM-DD",
   "categoria": "proveedores|arriendo|servicios|nomina|impuestos|transporte|mantenimiento|otros",
   "descripcion": "descripción breve de lo que se compró",
-  "confianza": "alta|media|baja"
+  "confianza": "alta|media|baja",
+  "ingredientes": [
+    { "nombre": "tomate", "cantidad": 5, "unidad": "unidad", "costo_total": 5000 }
+  ]
 }
-Reglas: monto siempre en pesos colombianos sin puntos ni comas (solo dígitos). Si no puedes leer algún campo usa null. Si no es una factura responde: {"error": "no_es_factura"}`,
+Reglas:
+- monto y costo_total siempre en pesos colombianos sin puntos ni comas (solo dígitos).
+- Si no puedes leer algún campo usa null.
+- "ingredientes": un renglón por cada producto físico/materia prima comprado, con su cantidad. "unidad" DEBE ser una de: "unidad", "g", "kg", "lb", "ml", "L" (elige la que mejor represente lo comprado; si no sabes usa "unidad"). "costo_total" es el precio total de ese renglón (o null si no se ve). Si la factura es de un servicio (arriendo, luz, agua, nómina…) o no tiene productos con cantidades, devuelve "ingredientes": [].
+- Si no es una factura responde: {"error": "no_es_factura"}`,
         },
       ],
     }],

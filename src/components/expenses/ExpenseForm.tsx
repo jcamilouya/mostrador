@@ -18,6 +18,7 @@ import { Loader2, Save, ArrowLeft, Camera, Sparkles, X, CheckCircle2, AlertCircl
 import { CATEGORIA_INFO, CATEGORIAS_EGRESO, type CategoriaEgreso } from '@/lib/egresos/schemas';
 import type { Egreso } from '@/lib/egresos/queries';
 import type { ActionState } from '@/lib/egresos/actions';
+import { IngredientesDetectados, type LineaDetectada } from '@/components/insumos/IngredientesDetectados';
 
 const METODOS_PAGO = [
   { value: 'efectivo', label: 'Efectivo' },
@@ -39,6 +40,7 @@ type DatosIA = {
   categoria: CategoriaEgreso | null;
   descripcion: string | null;
   confianza: 'alta' | 'media' | 'baja';
+  ingredientes?: LineaDetectada[];
 };
 
 function SubmitButton({ creando }: { creando: boolean }) {
@@ -63,9 +65,11 @@ function SubmitButton({ creando }: { creando: boolean }) {
 export function ExpenseForm({
   action,
   egreso,
+  insumos = [],
 }: {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   egreso?: Egreso;
+  insumos?: { id: string; nombre: string; unidad: string }[];
 }) {
   const [state, formAction] = useActionState(action, {});
 
@@ -239,6 +243,14 @@ export function ExpenseForm({
           />
         </div>
       )}
+
+      {/* Ingredientes detectados en la factura → sumar al inventario */}
+      {!egreso &&
+        scanEstado === 'ok' &&
+        scanResultado?.ingredientes &&
+        scanResultado.ingredientes.length > 0 && (
+          <IngredientesDetectados lineas={scanResultado.ingredientes} insumos={insumos} />
+        )}
 
       <form action={formAction} className="space-y-5">
         {/* Selector visual de categoría */}

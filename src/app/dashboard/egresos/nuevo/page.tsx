@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { ExpenseForm } from '@/components/expenses/ExpenseForm';
 import { getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
+import { getInsumos } from '@/lib/insumos/queries';
 import { crearEgreso } from '@/lib/egresos/actions';
 
 export const metadata: Metadata = {
@@ -12,6 +13,8 @@ export default async function NuevoEgresoPage() {
   const empresaId = await getEmpresaIdDelUsuario();
   if (!empresaId) redirect('/onboarding');
 
+  const insumos = await getInsumos(empresaId);
+
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6">
       <header>
@@ -21,7 +24,10 @@ export default async function NuevoEgresoPage() {
         </p>
       </header>
 
-      <ExpenseForm action={crearEgreso} />
+      <ExpenseForm
+        action={crearEgreso}
+        insumos={insumos.map((i) => ({ id: i.id, nombre: i.nombre, unidad: i.unidad }))}
+      />
     </div>
   );
 }

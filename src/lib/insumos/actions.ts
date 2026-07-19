@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { insumoSchema, agregarStockSchema, ajusteStockSchema } from './schemas';
-import { convertir } from './units';
+import { convertir, UNIDAD_VALUES } from './units';
 
 export type InsumoState = { ok?: boolean; error?: string };
 
@@ -225,4 +225,101 @@ export async function ajustarStock(_prev: InsumoState, formData: FormData): Prom
 
   refrescar();
   return { ok: true };
+}
+
+// ── Fase 2: sumar al inventario los ingredientes leídos de una factura ──
+
+export type LineaCompra = {
+  nombre: string;
+  cantidad: number;
+  unidad: string;
+  costo_total?: number | null;
+  /** Si se vincula a un insumo existente; si es null/undefined se crea uno nuevo. */
+  insumo_id?: string | null;
+};
+
+export async function procesarCompraIngredientes(
+  lineas: LineaCompra[],
+): Promise<{ ok: boolean; agregados?: number; error?: string }> {
+  const empresaId = await requireEmpresaId();
+  if (!empresaId) return { ok: false, error: 'No autenticado' };
+  if (!Array.isArray(lineas) || lineas.length === 0) return { ok: true, agregados: 0 };
+
+  const admin = createAdminClient();
+  let agregados = 0;
+
+  for (const l of lineas) {
+    const nombre = (l.nombre ?? '').trim();
+    const cantidad = Number(l.cantidad) || 0;
+    if (!nombre || cantidad <= 0) continue;
+    const unidad = UNIDAD_VALUES.includes(l.unidad) ? l.unidad : 'unidad';
+    const costoTotal = l.costo_total != null && l.costo_total > 0 ? Number(l.costo_total) : null;
+
+    if (l.insumo_id) {
+      // Vincular a un insumo existente: convertir y sumar.
+      const { data: insumo } = await admin
+        .from('insumos')
+        .select('stock_actual, costo_unitario, unidad')
+        .eq('id', l.insumo_id)
+        .eq('empresa_id', empresaId)
+        .single();
+      if (!insumo) continue;
+      const cantBase = convertir(cantidad, unidad, insumo.unidad as string);
+      if (cantBase === null) continue; // unidad incompatible, saltar esta línea
+
+      const stockAnterior = Number(insumo.stock_actual) || 0;
+      const stockNuevo = stockAnterior + cantBase;
+      let costoUnitario = Number(insumo.costo_unitario) || 0;
+      if (costoTotal && cantBase > 0) {
+        const costoCompraUnit = costoTotal / cantBase;
+        costoUnitario =
+          stockNuevo > 0
+            ? (stockAnterior * costoUnitario + cantBase * costoCompraUnit) / stockNuevo
+            : costoCompraUnit;
+      }
+      await admin
+        .from('insumos')
+        .update({ stock_actual: stockNuevo, costo_unitario: costoUnitario, updated_at: new Date().toISOString() })
+        .eq('id', l.insumo_id)
+        .eq('empresa_id', empresaId);
+      await admin.from('movimientos_insumos').insert({
+        empresa_id: empresaId,
+        insumo_id: l.insumo_id,
+        tipo: 'entrada',
+        cantidad: cantBase,
+        referencia_tipo: 'compra',
+        notas: `Compra (factura): ${cantidad} ${unidad}`,
+      });
+      agregados++;
+    } else {
+      // Crear un insumo nuevo con el stock comprado.
+      const costoUnitario = costoTotal && cantidad > 0 ? costoTotal / cantidad : 0;
+      const { data: nuevo } = await admin
+        .from('insumos')
+        .insert({
+          empresa_id: empresaId,
+          nombre,
+          unidad,
+          stock_actual: cantidad,
+          stock_minimo: 0,
+          costo_unitario: costoUnitario,
+        })
+        .select('id')
+        .single();
+      if (nuevo) {
+        await admin.from('movimientos_insumos').insert({
+          empresa_id: empresaId,
+          insumo_id: nuevo.id,
+          tipo: 'entrada',
+          cantidad,
+          referencia_tipo: 'compra',
+          notas: 'Alta desde factura',
+        });
+        agregados++;
+      }
+    }
+  }
+
+  refrescar();
+  return { ok: true, agregados };
 }
