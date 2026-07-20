@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Dialog,
@@ -11,7 +11,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, PackagePlus, SlidersHorizontal, Trash2, AlertTriangle, Carrot } from 'lucide-react';
+import { Plus, Pencil, PackagePlus, SlidersHorizontal, Trash2, AlertTriangle } from 'lucide-react';
 import {
   crearInsumo,
   actualizarInsumo,
@@ -21,6 +21,7 @@ import {
   type InsumoState,
 } from '@/lib/insumos/actions';
 import { UNIDADES, unidadesCompatibles, unidadCorta, formatCantidad } from '@/lib/insumos/units';
+import { MODULOS, getModulo } from '@/lib/insumos/modulos';
 import type { InsumoConAlerta } from '@/lib/insumos/queries';
 import { formatCOP } from '@/lib/utils/format';
 
@@ -34,43 +35,69 @@ type Modal =
 export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
   const router = useRouter();
   const [modal, setModal] = useState<Modal>(null);
+  const [modulo, setModulo] = useState<string>('materia_prima');
   const cerrar = () => {
     setModal(null);
     router.refresh();
   };
 
+  const delModulo = useMemo(
+    () => insumos.filter((i) => (i.tipo ?? 'materia_prima') === modulo),
+    [insumos, modulo],
+  );
   const bajos = insumos.filter((i) => i.bajo).length;
+  const modDef = getModulo(modulo);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          {bajos > 0 && (
-            <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--egreso)]">
-              <AlertTriangle className="h-4 w-4" /> {bajos} ingrediente{bajos === 1 ? '' : 's'} por
-              agotarse
-            </p>
-          )}
-        </div>
-        <Button className="rounded-2xl gap-2" onClick={() => setModal({ tipo: 'crear' })}>
-          <Plus className="h-4 w-4" /> Nuevo ingrediente
+      {/* Pestañas de módulos */}
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {MODULOS.map((m) => {
+          const count = insumos.filter((i) => (i.tipo ?? 'materia_prima') === m.value).length;
+          const activo = modulo === m.value;
+          return (
+            <button
+              key={m.value}
+              onClick={() => setModulo(m.value)}
+              className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 py-1.5 text-sm transition-colors ${
+                activo ? 'bg-foreground text-background' : 'bg-card text-muted-foreground hover:bg-secondary'
+              }`}
+            >
+              <span>{m.emoji}</span>
+              {m.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">{modDef?.descripcion}</p>
+        <Button className="shrink-0 rounded-2xl gap-2" onClick={() => setModal({ tipo: 'crear' })}>
+          <Plus className="h-4 w-4" /> Agregar
         </Button>
       </div>
 
-      {insumos.length === 0 ? (
+      {bajos > 0 && (
+        <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--egreso)]">
+          <AlertTriangle className="h-4 w-4" /> {bajos} ítem{bajos === 1 ? '' : 's'} por agotarse en tu
+          inventario
+        </p>
+      )}
+
+      {delModulo.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-3xl bg-card p-10 text-center shadow-sm">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary">
-            <Carrot className="h-7 w-7 text-muted-foreground" />
+            <span className="text-2xl">{modDef?.emoji ?? '📦'}</span>
           </span>
           <p className="text-sm text-muted-foreground">
-            Aún no tienes ingredientes. Agrégalos para controlar cuánto pan, carne, tomate… te
-            queda, y descontarlos solos al vender.
+            Aún no tienes nada en <strong>{modDef?.label}</strong>. Agrégalo para llevar el control y,
+            si es materia prima, descontarlo solo al vender.
           </p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-3xl bg-card shadow-sm">
           <ul className="divide-y divide-border">
-            {insumos.map((i) => (
+            {delModulo.map((i) => (
               <li key={i.id} className="flex flex-wrap items-center gap-3 p-4">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{i.nombre}</p>
@@ -82,11 +109,7 @@ export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
                 </div>
 
                 <div className="text-right">
-                  <p
-                    className={`font-semibold tabular-nums ${
-                      i.bajo ? 'text-[var(--egreso)]' : ''
-                    }`}
-                  >
+                  <p className={`font-semibold tabular-nums ${i.bajo ? 'text-[var(--egreso)]' : ''}`}>
                     {formatCantidad(i.stock_actual, i.unidad)}
                   </p>
                   {i.bajo && <p className="text-[10px] font-medium text-[var(--egreso)]">Bajo</p>}
@@ -125,9 +148,9 @@ export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
           {modal?.tipo === 'crear' && (
             <>
               <DialogHeader>
-                <DialogTitle>Nuevo ingrediente</DialogTitle>
+                <DialogTitle>Nuevo en {modDef?.label}</DialogTitle>
               </DialogHeader>
-              <InsumoForm onDone={cerrar} />
+              <InsumoForm defaultTipo={modulo} onDone={cerrar} />
             </>
           )}
           {modal?.tipo === 'editar' && (
@@ -182,14 +205,22 @@ function IconBtn({
 }
 
 function Feedback({ state }: { state: InsumoState }) {
-  if (state.error)
-    return <p className="text-sm text-[var(--egreso)]">{state.error}</p>;
+  if (state.error) return <p className="text-sm text-[var(--egreso)]">{state.error}</p>;
   return null;
 }
 
-function InsumoForm({ insumo, onDone }: { insumo?: InsumoConAlerta; onDone: () => void }) {
+function InsumoForm({
+  insumo,
+  defaultTipo = 'materia_prima',
+  onDone,
+}: {
+  insumo?: InsumoConAlerta;
+  defaultTipo?: string;
+  onDone: () => void;
+}) {
   const action = insumo ? actualizarInsumo.bind(null, insumo.id) : crearInsumo;
   const [state, formAction, pending] = useActionState<InsumoState, FormData>(action, {});
+  const [unidad, setUnidad] = useState(insumo?.unidad ?? 'unidad');
   useEffect(() => {
     if (state.ok) onDone();
   }, [state.ok, onDone]);
@@ -198,15 +229,33 @@ function InsumoForm({ insumo, onDone }: { insumo?: InsumoConAlerta; onDone: () =
     <form action={formAction} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="nombre">Nombre</Label>
-        <Input id="nombre" name="nombre" defaultValue={insumo?.nombre} required placeholder="Ej: Tomate, Carne, Pan" className="rounded-xl h-11" />
+        <Input id="nombre" name="nombre" defaultValue={insumo?.nombre} required placeholder="Ej: Tomate, Coca-Cola, Silla" className="rounded-xl h-11" />
       </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="tipo">Módulo</Label>
+        <select
+          id="tipo"
+          name="tipo"
+          defaultValue={insumo?.tipo ?? defaultTipo}
+          className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+        >
+          {MODULOS.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.emoji} {m.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label htmlFor="unidad">Se mide en</Label>
           <select
             id="unidad"
             name="unidad"
-            defaultValue={insumo?.unidad ?? 'unidad'}
+            value={unidad}
+            onChange={(e) => setUnidad(e.target.value)}
             className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
           >
             {UNIDADES.map((u) => (
@@ -227,13 +276,13 @@ function InsumoForm({ insumo, onDone }: { insumo?: InsumoConAlerta; onDone: () =
           <Input id="stock_minimo" name="stock_minimo" type="number" step="any" min="0" defaultValue={insumo?.stock_minimo ?? 0} className="rounded-xl h-11" />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="costo_unitario">Costo por unidad (opcional)</Label>
+          <Label htmlFor="costo_unitario">Costo por {unidadCorta(unidad)} (opcional)</Label>
           <Input id="costo_unitario" name="costo_unitario" type="number" step="any" min="0" defaultValue={insumo?.costo_unitario ?? 0} className="rounded-xl h-11" />
         </div>
       </div>
       <Feedback state={state} />
       <Button type="submit" disabled={pending} className="w-full rounded-2xl h-11">
-        {pending ? 'Guardando…' : insumo ? 'Guardar cambios' : 'Crear ingrediente'}
+        {pending ? 'Guardando…' : insumo ? 'Guardar cambios' : 'Agregar al inventario'}
       </Button>
     </form>
   );

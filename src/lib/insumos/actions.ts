@@ -31,6 +31,7 @@ export async function crearInsumo(_prev: InsumoState, formData: FormData): Promi
 
   const parsed = insumoSchema.safeParse({
     nombre: formData.get('nombre'),
+    tipo: formData.get('tipo') ?? 'materia_prima',
     unidad: formData.get('unidad'),
     stock_actual: formData.get('stock_actual') ?? '0',
     stock_minimo: formData.get('stock_minimo') ?? '0',
@@ -45,6 +46,7 @@ export async function crearInsumo(_prev: InsumoState, formData: FormData): Promi
     .insert({
       empresa_id: empresaId,
       nombre: d.nombre,
+      tipo: d.tipo,
       unidad: d.unidad,
       stock_actual: d.stock_actual,
       stock_minimo: d.stock_minimo,
@@ -79,6 +81,7 @@ export async function actualizarInsumo(
 
   const parsed = insumoSchema.safeParse({
     nombre: formData.get('nombre'),
+    tipo: formData.get('tipo') ?? 'materia_prima',
     unidad: formData.get('unidad'),
     stock_actual: formData.get('stock_actual') ?? '0',
     stock_minimo: formData.get('stock_minimo') ?? '0',
@@ -93,6 +96,7 @@ export async function actualizarInsumo(
     .from('insumos')
     .update({
       nombre: d.nombre,
+      tipo: d.tipo,
       unidad: d.unidad,
       stock_minimo: d.stock_minimo,
       costo_unitario: d.costo_unitario,

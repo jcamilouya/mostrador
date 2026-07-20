@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 export type Insumo = {
   id: string;
   nombre: string;
+  tipo: string;
   unidad: string;
   stock_actual: number;
   stock_minimo: number;
@@ -21,6 +22,7 @@ function normalizar(row: Record<string, unknown>): Insumo {
   return {
     id: row.id as string,
     nombre: row.nombre as string,
+    tipo: (row.tipo as string) ?? 'materia_prima',
     unidad: (row.unidad as string) ?? 'unidad',
     stock_actual: Number(row.stock_actual) || 0,
     stock_minimo: Number(row.stock_minimo) || 0,
@@ -33,7 +35,7 @@ export async function getInsumos(empresaId: string): Promise<InsumoConAlerta[]> 
   const supabase = await createClient();
   const { data } = await supabase
     .from('insumos')
-    .select('id, nombre, unidad, stock_actual, stock_minimo, costo_unitario, activo')
+    .select('id, nombre, tipo, unidad, stock_actual, stock_minimo, costo_unitario, activo')
     .eq('empresa_id', empresaId)
     .eq('activo', true)
     .order('nombre');
@@ -47,7 +49,7 @@ export async function getInsumo(empresaId: string, id: string): Promise<Insumo |
   const supabase = await createClient();
   const { data } = await supabase
     .from('insumos')
-    .select('id, nombre, unidad, stock_actual, stock_minimo, costo_unitario, activo')
+    .select('id, nombre, tipo, unidad, stock_actual, stock_minimo, costo_unitario, activo')
     .eq('empresa_id', empresaId)
     .eq('id', id)
     .maybeSingle();

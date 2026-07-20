@@ -2,7 +2,7 @@ import {
   LayoutDashboard,
   ShoppingCart,
   Package,
-  Carrot,
+  Warehouse,
   TrendingUp,
   Receipt,
   BarChart3,
@@ -22,7 +22,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Inicio', icon: LayoutDashboard },
   { href: '/dashboard/pos', label: 'Vender', icon: ShoppingCart },
   { href: '/dashboard/inventario', label: 'Productos', icon: Package },
-  { href: '/dashboard/insumos', label: 'Ingredientes', icon: Carrot },
+  { href: '/dashboard/insumos', label: 'Inventario', icon: Warehouse },
   { href: '/dashboard/ingresos', label: 'Ingresos', icon: TrendingUp },
   { href: '/dashboard/egresos', label: 'Gastos', icon: Receipt },
   { href: '/dashboard/clientes', label: 'Clientes', icon: Users },
@@ -43,7 +43,7 @@ export const BOTTOM_PRIMARY: NavItem[] = [
 // Resto de secciones, accesibles desde el menú "Más" en móvil.
 export const MORE_ITEMS: NavItem[] = [
   { href: '/dashboard/inventario', label: 'Productos', icon: Package },
-  { href: '/dashboard/insumos', label: 'Ingredientes', icon: Carrot },
+  { href: '/dashboard/insumos', label: 'Inventario', icon: Warehouse },
   { href: '/dashboard/ingresos', label: 'Ingresos', icon: TrendingUp },
   { href: '/dashboard/clientes', label: 'Clientes', icon: Users },
   { href: '/dashboard/reportes', label: 'Reportes', icon: FileText },

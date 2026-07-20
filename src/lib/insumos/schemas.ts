@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { UNIDAD_VALUES } from './units';
+import { MODULO_VALUES } from './modulos';
 
 export const insumoSchema = z.object({
   nombre: z.string().trim().min(1, { error: 'El nombre es obligatorio' }).max(80),
+  tipo: z.enum(MODULO_VALUES as [string, ...string[]]).default('materia_prima'),
   unidad: z.enum(UNIDAD_VALUES as [string, ...string[]]),
   stock_actual: z.coerce.number().min(0).default(0),
   stock_minimo: z.coerce.number().min(0).default(0),

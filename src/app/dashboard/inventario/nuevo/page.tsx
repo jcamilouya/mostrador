@@ -30,12 +30,14 @@ export default async function NuevoProductoPage() {
       <ProductForm
         action={crearProducto}
         categorias={categorias}
-        insumos={insumos.map((i) => ({
-          id: i.id,
-          nombre: i.nombre,
-          unidad: i.unidad,
-          costo_unitario: i.costo_unitario,
-        }))}
+        insumos={insumos
+          .filter((i) => i.tipo === 'materia_prima')
+          .map((i) => ({
+            id: i.id,
+            nombre: i.nombre,
+            unidad: i.unidad,
+            costo_unitario: i.costo_unitario,
+          }))}
       />
     </div>
   );

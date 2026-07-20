@@ -48,12 +48,14 @@ export default async function EditarProductoPage({
         action={accionBindeada}
         categorias={categorias}
         producto={producto}
-        insumos={insumos.map((i) => ({
-          id: i.id,
-          nombre: i.nombre,
-          unidad: i.unidad,
-          costo_unitario: i.costo_unitario,
-        }))}
+        insumos={insumos
+          .filter((i) => i.tipo === 'materia_prima')
+          .map((i) => ({
+            id: i.id,
+            nombre: i.nombre,
+            unidad: i.unidad,
+            costo_unitario: i.costo_unitario,
+          }))}
         recetaInicial={receta.map((r) => ({ insumo_id: r.insumo_id, cantidad: r.cantidad }))}
       />
     </div>
