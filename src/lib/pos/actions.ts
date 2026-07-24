@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPlanInfo } from '@/lib/plan/queries';
-import { descontarIngredientesPorVenta } from '@/lib/insumos/consumo';
+import { descontarIngredientesPorVenta, descontarInsumosVendidos } from '@/lib/insumos/consumo';
 import type { VentaResult } from './types';
 
 const itemSchema = z.object({
@@ -14,6 +14,8 @@ const itemSchema = z.object({
   precio_unitario: z.number().nonnegative(),
   precio_compra: z.number().nonnegative(),
   nombre: z.string().min(1),
+  // Bebida del Inventario elegida para esta línea (módulo Bebidas).
+  insumo_extra_id: z.uuid().nullable().optional(),
 });
 
 const ventaSchema = z.object({
@@ -93,7 +95,9 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
     return { ok: false, error: `No se pudo registrar la venta: ${ventaErr?.message ?? 'error desconocido'}` };
   }
 
-  // Insertar items
+  // Insertar items. La columna insumo_extra_id (bebida elegida) solo se envía
+  // cuando la venta la usa, para no depender de la migración 008 en el resto.
+  const usaBebidas = parsed.data.items.some((i) => i.insumo_extra_id);
   const itemsRows = parsed.data.items.map((i) => ({
     venta_id: venta.id,
     producto_id: i.producto_id,
@@ -102,6 +106,7 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
     precio_unitario: i.precio_unitario,
     precio_compra: i.precio_compra,
     subtotal: i.cantidad * i.precio_unitario,
+    ...(usaBebidas ? { insumo_extra_id: i.insumo_extra_id ?? null } : {}),
   }));
 
   const { error: itemsErr } = await admin.from('venta_items').insert(itemsRows);
@@ -145,6 +150,17 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
       venta.id,
       venta.numero_venta,
       parsed.data.items.map((i) => ({ producto_id: i.producto_id, cantidad: i.cantidad })),
+    );
+
+    // Descontar las bebidas elegidas (módulo Bebidas del Inventario).
+    await descontarInsumosVendidos(
+      admin,
+      empresaId,
+      venta.id,
+      venta.numero_venta,
+      parsed.data.items
+        .filter((i) => i.insumo_extra_id)
+        .map((i) => ({ insumo_id: i.insumo_extra_id as string, cantidad: i.cantidad })),
     );
   }
 

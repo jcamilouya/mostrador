@@ -17,9 +17,15 @@ type CartState = {
   totalItems: () => number;
 };
 
-// Una línea por producto + opción elegida.
-function calcularLineId(item: { producto_id: string; variante?: string | null }): string {
-  return item.variante ? `${item.producto_id}::${item.variante}` : item.producto_id;
+// Una línea por producto + opción elegida (+ bebida elegida).
+function calcularLineId(item: {
+  producto_id: string;
+  variante?: string | null;
+  insumo_extra_id?: string | null;
+}): string {
+  let id = item.variante ? `${item.producto_id}::${item.variante}` : item.producto_id;
+  if (item.insumo_extra_id) id += `::b:${item.insumo_extra_id}`;
+  return id;
 }
 
 export const useCart = create<CartState>((set, get) => ({

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { descontarIngredientesPorVenta } from '@/lib/insumos/consumo';
+import { descontarIngredientesPorVenta, descontarInsumosVendidos } from '@/lib/insumos/consumo';
 import { configuracionSchema } from './schemas';
 
 export type ConfigState = { ok?: boolean; error?: string };
@@ -94,6 +94,14 @@ export async function confirmarVentaBreb(ventaId: string): Promise<ConfirmarResu
     .select('producto_id, cantidad')
     .eq('venta_id', ventaId);
 
+  // Bebidas elegidas por línea. Consulta aparte: si la columna aún no existe
+  // (migración 008 sin correr), degrada a ninguna sin romper la confirmación.
+  const { data: bebidaItems } = await admin
+    .from('venta_items')
+    .select('insumo_extra_id, cantidad')
+    .eq('venta_id', ventaId)
+    .not('insumo_extra_id', 'is', null);
+
   const { error: updErr } = await admin
     .from('ventas')
     .update({ estado: 'completada' })
@@ -135,6 +143,18 @@ export async function confirmarVentaBreb(ventaId: string): Promise<ConfirmarResu
     (items ?? [])
       .filter((it) => it.producto_id)
       .map((it) => ({ producto_id: it.producto_id as string, cantidad: it.cantidad })),
+  );
+
+  // Descontar las bebidas elegidas en las líneas de la venta.
+  await descontarInsumosVendidos(
+    admin,
+    empresaId,
+    ventaId,
+    venta.numero_venta,
+    (bebidaItems ?? []).map((it) => ({
+      insumo_id: it.insumo_extra_id as string,
+      cantidad: it.cantidad,
+    })),
   );
 
   revalidatePath('/dashboard');

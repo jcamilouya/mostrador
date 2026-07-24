@@ -5,9 +5,11 @@ const moneyString = z
   .transform((v) => (typeof v === 'string' ? parseFloat(v.replace(/[^0-9.-]/g, '')) || 0 : v));
 
 // Una opción/combo del producto: nombre + su precio completo.
+// `bebida: true` = al vender esta opción se elige una bebida del Inventario.
 const varianteItemSchema = z.object({
   nombre: z.string().min(1, { error: 'Cada opción necesita un nombre' }).max(60).trim(),
   precio: moneyString.pipe(z.number().min(0, { error: 'Precio inválido' })),
+  bebida: z.boolean().optional().default(false),
 });
 
 // Llega del formulario como un string JSON (hidden input). Lo parseamos,
@@ -39,6 +41,10 @@ export const productoSchema = z.object({
   stock_minimo: moneyString.pipe(z.number().int().min(0)),
   activo: z.union([z.boolean(), z.literal('on'), z.literal('off')]).optional().default(true),
   variantes: variantesSchema,
+  // '1' cuando el producto base pide elegir bebida al venderlo.
+  pide_bebida: z
+    .union([z.string(), z.boolean(), z.null(), z.undefined()])
+    .transform((v) => v === '1' || v === true),
 });
 
 export const categoriaSchema = z.object({

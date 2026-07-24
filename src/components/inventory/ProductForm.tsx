@@ -116,21 +116,31 @@ export function ProductForm({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Opciones / combos: el precio se maneja como string en el input.
-  const [variantes, setVariantes] = useState<{ nombre: string; precio: string }[]>(
-    (producto?.variantes ?? []).map((v) => ({ nombre: v.nombre, precio: String(v.precio) })),
+  const [variantes, setVariantes] = useState<{ nombre: string; precio: string; bebida: boolean }[]>(
+    (producto?.variantes ?? []).map((v) => ({
+      nombre: v.nombre,
+      precio: String(v.precio),
+      bebida: v.bebida === true,
+    })),
   );
   // Solo las opciones con nombre se envían (precio vacío = 0).
   const variantesLimpias = variantes
     .filter((v) => v.nombre.trim().length > 0)
-    .map((v) => ({ nombre: v.nombre.trim(), precio: Number(v.precio) || 0 }));
+    .map((v) => ({ nombre: v.nombre.trim(), precio: Number(v.precio) || 0, bebida: v.bebida }));
+
+  // El producto base ("Sencillo") pide elegir bebida al venderlo.
+  const [pideBebida, setPideBebida] = useState(producto?.pide_bebida === true);
 
   function agregarVariante() {
-    setVariantes((prev) => [...prev, { nombre: '', precio: '' }]);
+    setVariantes((prev) => [...prev, { nombre: '', precio: '', bebida: false }]);
   }
   function actualizarVariante(idx: number, campo: 'nombre' | 'precio', valor: string) {
     setVariantes((prev) =>
       prev.map((v, i) => (i === idx ? { ...v, [campo]: valor } : v)),
     );
+  }
+  function toggleVarianteBebida(idx: number) {
+    setVariantes((prev) => prev.map((v, i) => (i === idx ? { ...v, bebida: !v.bebida } : v)));
   }
   function quitarVariante(idx: number) {
     setVariantes((prev) => prev.filter((_, i) => i !== idx));
@@ -236,6 +246,8 @@ export function ProductForm({
       <input type="hidden" name="variantes" value={JSON.stringify(variantesLimpias)} />
       {/* Receta (ingredientes) serializada a JSON */}
       <input type="hidden" name="receta" value={JSON.stringify(recetaLimpia)} />
+      {/* El producto base pide elegir bebida al vender */}
+      <input type="hidden" name="pide_bebida" value={pideBebida ? '1' : '0'} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Columna principal */}
@@ -465,33 +477,41 @@ export function ProductForm({
                   <span />
                 </div>
                 {variantes.map((v, idx) => (
-                  <div
-                    key={idx}
-                    className="grid grid-cols-[1fr_2.5rem] items-center gap-2 sm:grid-cols-[1fr_9rem_2.5rem]"
-                  >
-                    <Input
-                      value={v.nombre}
-                      onChange={(e) => actualizarVariante(idx, 'nombre', e.target.value)}
-                      placeholder="Con papas"
-                      className="rounded-xl h-11 col-span-1 max-sm:col-start-1"
-                    />
-                    <Input
-                      value={v.precio}
-                      onChange={(e) => actualizarVariante(idx, 'precio', e.target.value)}
-                      type="number"
-                      step="100"
-                      min="0"
-                      placeholder="Precio"
-                      className="rounded-xl h-11 tabular-nums max-sm:col-span-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => quitarVariante(idx)}
-                      className="flex h-11 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
-                      aria-label="Quitar opción"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                  <div key={idx} className="space-y-1">
+                    <div className="grid grid-cols-[1fr_2.5rem] items-center gap-2 sm:grid-cols-[1fr_9rem_2.5rem]">
+                      <Input
+                        value={v.nombre}
+                        onChange={(e) => actualizarVariante(idx, 'nombre', e.target.value)}
+                        placeholder="Con papas"
+                        className="rounded-xl h-11 col-span-1 max-sm:col-start-1"
+                      />
+                      <Input
+                        value={v.precio}
+                        onChange={(e) => actualizarVariante(idx, 'precio', e.target.value)}
+                        type="number"
+                        step="100"
+                        min="0"
+                        placeholder="Precio"
+                        className="rounded-xl h-11 tabular-nums max-sm:col-span-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => quitarVariante(idx)}
+                        className="flex h-11 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
+                        aria-label="Quitar opción"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <label className="flex cursor-pointer items-center gap-2 pl-1 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={v.bebida}
+                        onChange={() => toggleVarianteBebida(idx)}
+                        className="h-3.5 w-3.5 rounded border-border"
+                      />
+                      🥤 Al vender esta opción se elige la bebida (se descuenta del Inventario)
+                    </label>
                   </div>
                 ))}
               </div>
@@ -510,6 +530,22 @@ export function ProductForm({
                 Si no agregas opciones, el producto se vende solo con su precio normal.
               </p>
             )}
+
+            {/* Bebida para el producto base ("Sencillo") */}
+            <label className="flex cursor-pointer items-start gap-2 rounded-2xl bg-secondary/40 p-3 text-sm">
+              <input
+                type="checkbox"
+                checked={pideBebida}
+                onChange={(e) => setPideBebida(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border"
+              />
+              <span>
+                🥤 <strong>Este producto (opción &quot;Sencillo&quot;) incluye bebida a elegir.</strong>{' '}
+                <span className="text-xs text-muted-foreground">
+                  Al venderlo, el POS pregunta cuál bebida del Inventario y la descuenta.
+                </span>
+              </span>
+            </label>
           </div>
 
           {/* Receta / ingredientes */}

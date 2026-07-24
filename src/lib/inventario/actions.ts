@@ -81,6 +81,7 @@ export async function crearProducto(_prev: ActionState, formData: FormData): Pro
     stock_minimo: formData.get('stock_minimo') ?? '5',
     activo: true,
     variantes: formData.get('variantes'),
+    pide_bebida: formData.get('pide_bebida'),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -108,6 +109,7 @@ export async function crearProducto(_prev: ActionState, formData: FormData): Pro
       stock_minimo: parsed.data.stock_minimo,
       activo: true,
       variantes: parsed.data.variantes,
+      pide_bebida: parsed.data.pide_bebida,
       imagen_url,
     })
     .select('id')
@@ -141,6 +143,7 @@ export async function actualizarProducto(
     stock_minimo: formData.get('stock_minimo') ?? '5',
     activo: formData.get('activo') !== 'off',
     variantes: formData.get('variantes'),
+    pide_bebida: formData.get('pide_bebida'),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -170,6 +173,7 @@ export async function actualizarProducto(
     stock_minimo: parsed.data.stock_minimo,
     activo: parsed.data.activo !== false && parsed.data.activo !== 'off',
     variantes: parsed.data.variantes,
+    pide_bebida: parsed.data.pide_bebida,
     updated_at: new Date().toISOString(),
   };
   if (imagen_url !== undefined) updatePayload.imagen_url = imagen_url;

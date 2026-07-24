@@ -130,6 +130,7 @@ export function PaymentModal({
             precio_unitario: i.precio_venta,
             precio_compra: i.precio_compra,
             nombre: i.nombre,
+            insumo_extra_id: i.insumo_extra_id ?? null,
           })),
         });
       } catch {

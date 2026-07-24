@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { getEmpresaIdDelUsuario, getCategorias } from '@/lib/inventario/queries';
 import { getProductosPOS, getVentasHoy } from '@/lib/pos/queries';
+import { getInsumos } from '@/lib/insumos/queries';
 import { getBrebConfig } from '@/lib/breb/queries';
 import { ProductGrid } from '@/components/pos/ProductGrid';
 import { Cart } from '@/components/pos/Cart';
@@ -15,12 +16,17 @@ export default async function POSPage() {
   const empresaId = await getEmpresaIdDelUsuario();
   if (!empresaId) redirect('/onboarding');
 
-  const [productos, categorias, ventasHoy, breb] = await Promise.all([
+  const [productos, categorias, ventasHoy, breb, insumos] = await Promise.all([
     getProductosPOS(empresaId),
     getCategorias(empresaId),
     getVentasHoy(empresaId),
     getBrebConfig(empresaId),
+    getInsumos(empresaId),
   ]);
+
+  const bebidas = insumos
+    .filter((i) => i.tipo === 'bebidas')
+    .map((i) => ({ id: i.id, nombre: i.nombre, stock: i.stock_actual }));
 
   return (
     <div className="-mx-4 -my-6 flex min-h-[calc(100vh-4rem)] lg:-mx-8 lg:-my-8">
@@ -33,7 +39,7 @@ export default async function POSPage() {
           </p>
         </header>
 
-        <ProductGrid productos={productos} categorias={categorias} />
+        <ProductGrid productos={productos} categorias={categorias} bebidas={bebidas} />
 
         <div className="mt-4">
           <VentasHoyList ventas={ventasHoy} />

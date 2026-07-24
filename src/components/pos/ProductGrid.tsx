@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Search, Package, Layers } from 'lucide-react';
+import { Search, Package, Layers, CupSoda, ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
   Dialog,
@@ -14,17 +14,25 @@ import { formatCOP } from '@/lib/utils/format';
 import type { ProductoPOS } from '@/lib/pos/queries';
 
 type CategoriaInfo = { id: string; nombre: string; color: string };
+export type BebidaPOS = { id: string; nombre: string; stock: number };
+
+// Opción elegida en el paso 1 (null = producto "Sencillo").
+type OpcionSel = { nombre: string; precio: number; bebida?: boolean } | null;
 
 export function ProductGrid({
   productos,
   categorias,
+  bebidas = [],
 }: {
   productos: ProductoPOS[];
   categorias: CategoriaInfo[];
+  bebidas?: BebidaPOS[];
 }) {
   const [query, setQuery] = useState('');
   const [catFiltro, setCatFiltro] = useState<string>('todas');
   const [picker, setPicker] = useState<ProductoPOS | null>(null);
+  // Paso "bebida": guarda la opción elegida mientras se escoge la bebida.
+  const [pasoBebida, setPasoBebida] = useState<{ opcion: OpcionSel } | null>(null);
   const add = useCart((s) => s.add);
 
   const filtrados = useMemo(() => {
@@ -36,12 +44,18 @@ export function ProductGrid({
     });
   }, [productos, query, catFiltro]);
 
-  // Agrega al carrito el producto base o una opción/combo concreta.
-  function agregar(p: ProductoPOS, opcion?: { nombre: string; precio: number }) {
+  // Agrega al carrito el producto base o una opción/combo, con bebida opcional.
+  function agregar(
+    p: ProductoPOS,
+    opcion?: OpcionSel,
+    bebida?: BebidaPOS | null,
+  ) {
+    const base = opcion ? `${p.nombre} · ${opcion.nombre}` : p.nombre;
     add({
       producto_id: p.id,
-      nombre: opcion ? `${p.nombre} · ${opcion.nombre}` : p.nombre,
+      nombre: bebida ? `${base} (${bebida.nombre})` : base,
       variante: opcion ? opcion.nombre : null,
+      insumo_extra_id: bebida?.id ?? null,
       precio_venta: opcion ? opcion.precio : p.precio_venta,
       precio_compra: p.precio_compra,
       stock_disponible: p.stock_actual,
@@ -49,9 +63,31 @@ export function ProductGrid({
     });
   }
 
+  // Cierra el diálogo y resetea el paso de bebida.
+  function cerrarPicker() {
+    setPicker(null);
+    setPasoBebida(null);
+  }
+
+  // Al elegir una opción (o el producto base): si pide bebida y hay bebidas
+  // cargadas, pasar al paso 2; si no, agregar directo.
+  function elegirOpcion(p: ProductoPOS, opcion: OpcionSel) {
+    const pideBebida = opcion ? opcion.bebida === true : p.pide_bebida;
+    if (pideBebida && bebidas.length > 0) {
+      setPasoBebida({ opcion });
+    } else {
+      agregar(p, opcion);
+      cerrarPicker();
+    }
+  }
+
   function onTap(p: ProductoPOS) {
     if (p.variantes.length > 0) {
       setPicker(p);
+    } else if (p.pide_bebida && bebidas.length > 0) {
+      // Producto sencillo que pide bebida: abrir directo el paso de bebida.
+      setPicker(p);
+      setPasoBebida({ opcion: null });
     } else {
       agregar(p);
     }
@@ -163,34 +199,88 @@ export function ProductGrid({
         </div>
       )}
 
-      {/* Selector de opción/combo */}
-      <Dialog open={picker !== null} onOpenChange={(o) => !o && setPicker(null)}>
+      {/* Selector de opción/combo + bebida */}
+      <Dialog open={picker !== null} onOpenChange={(o) => !o && cerrarPicker()}>
         <DialogContent className="max-w-sm rounded-3xl">
           <DialogHeader>
-            <DialogTitle>{picker?.nombre}</DialogTitle>
+            <DialogTitle>
+              {pasoBebida
+                ? `¿Cuál bebida? 🥤`
+                : picker?.nombre}
+            </DialogTitle>
           </DialogHeader>
-          {picker && (
+
+          {/* Paso 1: opción/combo */}
+          {picker && !pasoBebida && (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">Elige una opción:</p>
               <OpcionButton
                 nombre="Sencillo"
                 precio={picker.precio_venta}
-                onClick={() => {
-                  agregar(picker);
-                  setPicker(null);
-                }}
+                conBebida={picker.pide_bebida && bebidas.length > 0}
+                onClick={() => elegirOpcion(picker, null)}
               />
               {picker.variantes.map((v, idx) => (
                 <OpcionButton
                   key={`${v.nombre}-${idx}`}
                   nombre={v.nombre}
                   precio={v.precio}
-                  onClick={() => {
-                    agregar(picker, v);
-                    setPicker(null);
-                  }}
+                  conBebida={v.bebida === true && bebidas.length > 0}
+                  onClick={() => elegirOpcion(picker, v)}
                 />
               ))}
+            </div>
+          )}
+
+          {/* Paso 2: bebida del Inventario */}
+          {picker && pasoBebida && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                {pasoBebida.opcion ? `${picker.nombre} · ${pasoBebida.opcion.nombre}` : picker.nombre}
+                {' — '}elige la bebida (se descuenta del Inventario):
+              </p>
+              <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                {bebidas.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => {
+                      agregar(picker, pasoBebida.opcion, b);
+                      cerrarPicker();
+                    }}
+                    className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-sm transition-colors hover:bg-secondary"
+                  >
+                    <span className="flex min-w-0 flex-1 items-center gap-2 font-medium">
+                      <CupSoda className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{b.nombre}</span>
+                    </span>
+                    <span
+                      className={`shrink-0 text-xs tabular-nums ${
+                        b.stock <= 0 ? 'text-[var(--egreso)]' : 'text-muted-foreground'
+                      }`}
+                    >
+                      {b.stock <= 0 ? 'Sin stock' : `${b.stock} disp.`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  agregar(picker, pasoBebida.opcion, null);
+                  cerrarPicker();
+                }}
+                className="w-full rounded-2xl border border-dashed p-3 text-sm text-muted-foreground transition-colors hover:bg-secondary"
+              >
+                Sin bebida / otra
+              </button>
+              <button
+                type="button"
+                onClick={() => setPasoBebida(null)}
+                className="flex w-full items-center justify-center gap-1 pt-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <ArrowLeft className="h-3 w-3" /> Volver a las opciones
+              </button>
             </div>
           )}
         </DialogContent>
@@ -202,10 +292,12 @@ export function ProductGrid({
 function OpcionButton({
   nombre,
   precio,
+  conBebida,
   onClick,
 }: {
   nombre: string;
   precio: number;
+  conBebida?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -214,7 +306,10 @@ function OpcionButton({
       onClick={onClick}
       className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-sm transition-colors hover:bg-secondary"
     >
-      <span className="min-w-0 flex-1 truncate font-medium">{nombre}</span>
+      <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-medium">
+        {nombre}
+        {conBebida && <CupSoda className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+      </span>
       <span className="shrink-0 font-semibold tabular-nums">{formatCOP(precio)}</span>
     </button>
   );

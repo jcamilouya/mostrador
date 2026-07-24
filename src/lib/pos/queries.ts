@@ -12,6 +12,7 @@ export type ProductoPOS = {
   categoria_nombre: string | null;
   categoria_color: string | null;
   variantes: VarianteItem[];
+  pide_bebida: boolean;
 };
 
 export type VentaResumen = {
@@ -28,7 +29,7 @@ export async function getProductosPOS(empresaId: string): Promise<ProductoPOS[]>
   const supabase = await createClient();
   const { data } = await supabase
     .from('productos')
-    .select('id, nombre, precio_venta, precio_compra, stock_actual, imagen_url, categoria_id, variantes, categorias (nombre, color)')
+    .select('*, categorias (nombre, color)')
     .eq('empresa_id', empresaId)
     .eq('activo', true)
     .order('nombre');
@@ -46,6 +47,7 @@ export async function getProductosPOS(empresaId: string): Promise<ProductoPOS[]>
       categoria_nombre: (cat as { nombre?: string } | null)?.nombre ?? null,
       categoria_color: (cat as { color?: string } | null)?.color ?? null,
       variantes: normalizarVariantes(p.variantes),
+      pide_bebida: p.pide_bebida === true,
     };
   });
 }

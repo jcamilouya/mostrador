@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { descontarIngredientesPorVenta } from '@/lib/insumos/consumo';
+import { descontarIngredientesPorVenta, descontarInsumosVendidos } from '@/lib/insumos/consumo';
 
 /**
  * Webhook de notificaciones de pago de Bancolombia Cobros QR.
@@ -115,6 +115,23 @@ export async function POST(req: Request) {
     (items ?? [])
       .filter((it) => it.producto_id)
       .map((it) => ({ producto_id: it.producto_id as string, cantidad: it.cantidad })),
+  );
+
+  // Descontar las bebidas elegidas por línea (degrada si falta la migración 008).
+  const { data: bebidaItems } = await admin
+    .from('venta_items')
+    .select('insumo_extra_id, cantidad')
+    .eq('venta_id', venta.id)
+    .not('insumo_extra_id', 'is', null);
+  await descontarInsumosVendidos(
+    admin,
+    venta.empresa_id,
+    venta.id,
+    venta.numero_venta ?? '',
+    (bebidaItems ?? []).map((it) => ({
+      insumo_id: it.insumo_extra_id as string,
+      cantidad: it.cantidad,
+    })),
   );
 
   return NextResponse.json({ ok: true });

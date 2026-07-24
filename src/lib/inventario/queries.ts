@@ -17,16 +17,18 @@ export type Producto = {
   categoria_id: string | null;
   imagen_url: string | null;
   variantes: VarianteItem[];
+  pide_bebida: boolean;
   categorias: { nombre: string; color: string } | null;
 };
 
-/** Normaliza el JSONB de variantes a un arreglo limpio de { nombre, precio }. */
+/** Normaliza el JSONB de variantes a un arreglo limpio de { nombre, precio, bebida }. */
 export function normalizarVariantes(raw: unknown): VarianteItem[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((v) => ({
       nombre: typeof v?.nombre === 'string' ? v.nombre : '',
       precio: Number(v?.precio) || 0,
+      bebida: v?.bebida === true,
     }))
     .filter((v) => v.nombre.trim().length > 0);
 }
@@ -63,6 +65,7 @@ export async function getProductos(empresaId: string): Promise<Producto[]> {
     precio_compra: Number(p.precio_compra),
     precio_venta: Number(p.precio_venta),
     variantes: normalizarVariantes(p.variantes),
+    pide_bebida: p.pide_bebida === true,
     categorias: Array.isArray(p.categorias) ? p.categorias[0] ?? null : p.categorias,
   })) as Producto[];
 }
@@ -81,6 +84,7 @@ export async function getProducto(empresaId: string, id: string): Promise<Produc
     precio_compra: Number(data.precio_compra),
     precio_venta: Number(data.precio_venta),
     variantes: normalizarVariantes(data.variantes),
+    pide_bebida: data.pide_bebida === true,
     categorias: Array.isArray(data.categorias) ? data.categorias[0] ?? null : data.categorias,
   } as Producto;
 }

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { devolverIngredientesPorVenta } from '@/lib/insumos/consumo';
+import { devolverIngredientesPorVenta, devolverInsumosVendidos } from '@/lib/insumos/consumo';
 
 export type VentaItemDetalle = {
   id: string;
@@ -145,6 +145,23 @@ export async function anularVenta(ventaId: string): Promise<AnularResult> {
       items
         .filter((it) => it.producto_id)
         .map((it) => ({ producto_id: it.producto_id as string, cantidad: Number(it.cantidad) || 0 })),
+    );
+
+    // Devolver las bebidas elegidas (degrada si falta la migración 008).
+    const { data: bebidaItems } = await admin
+      .from('venta_items')
+      .select('insumo_extra_id, cantidad')
+      .eq('venta_id', ventaId)
+      .not('insumo_extra_id', 'is', null);
+    await devolverInsumosVendidos(
+      admin,
+      empresaId,
+      ventaId,
+      venta.numero_venta,
+      (bebidaItems ?? []).map((it) => ({
+        insumo_id: it.insumo_extra_id as string,
+        cantidad: Number(it.cantidad) || 0,
+      })),
     );
   }
 

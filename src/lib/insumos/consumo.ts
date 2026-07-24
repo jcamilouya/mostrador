@@ -103,6 +103,78 @@ export async function devolverIngredientesPorVenta(
   }
 }
 
+type BebidaVendida = { insumo_id: string; cantidad: number };
+
+/** Descuenta bebidas (u otros insumos) elegidas directamente en la venta. */
+export async function descontarInsumosVendidos(
+  admin: Admin,
+  empresaId: string,
+  ventaId: string,
+  numeroVenta: number | string,
+  bebidas: BebidaVendida[],
+): Promise<void> {
+  for (const b of bebidas) {
+    if (!b.insumo_id || b.cantidad <= 0) continue;
+    const { data: ins } = await admin
+      .from('insumos')
+      .select('stock_actual')
+      .eq('id', b.insumo_id)
+      .eq('empresa_id', empresaId)
+      .single();
+    if (!ins) continue;
+    const nuevo = Math.max(0, (Number(ins.stock_actual) || 0) - b.cantidad);
+    await admin
+      .from('insumos')
+      .update({ stock_actual: nuevo, updated_at: new Date().toISOString() })
+      .eq('id', b.insumo_id)
+      .eq('empresa_id', empresaId);
+    await admin.from('movimientos_insumos').insert({
+      empresa_id: empresaId,
+      insumo_id: b.insumo_id,
+      tipo: 'salida',
+      cantidad: b.cantidad,
+      referencia_tipo: 'venta',
+      referencia_id: ventaId,
+      notas: `Venta #${numeroVenta} (bebida)`,
+    });
+  }
+}
+
+/** Devuelve al stock las bebidas de una venta anulada. */
+export async function devolverInsumosVendidos(
+  admin: Admin,
+  empresaId: string,
+  ventaId: string,
+  numeroVenta: number | string,
+  bebidas: BebidaVendida[],
+): Promise<void> {
+  for (const b of bebidas) {
+    if (!b.insumo_id || b.cantidad <= 0) continue;
+    const { data: ins } = await admin
+      .from('insumos')
+      .select('stock_actual')
+      .eq('id', b.insumo_id)
+      .eq('empresa_id', empresaId)
+      .single();
+    if (!ins) continue;
+    const nuevo = (Number(ins.stock_actual) || 0) + b.cantidad;
+    await admin
+      .from('insumos')
+      .update({ stock_actual: nuevo, updated_at: new Date().toISOString() })
+      .eq('id', b.insumo_id)
+      .eq('empresa_id', empresaId);
+    await admin.from('movimientos_insumos').insert({
+      empresa_id: empresaId,
+      insumo_id: b.insumo_id,
+      tipo: 'entrada',
+      cantidad: b.cantidad,
+      referencia_tipo: 'venta',
+      referencia_id: ventaId,
+      notas: `Venta #${numeroVenta} anulada (bebida devuelta)`,
+    });
+  }
+}
+
 /** Reemplaza la receta de un producto por el set de líneas dado (idempotente). */
 export async function reemplazarReceta(
   admin: Admin,
