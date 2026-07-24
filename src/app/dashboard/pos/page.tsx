@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { getEmpresaIdDelUsuario, getCategorias } from '@/lib/inventario/queries';
-import { getProductosPOS, getVentasHoy } from '@/lib/pos/queries';
+import { getProductosPOS, getVentasHoy, getTotalVentasHoy } from '@/lib/pos/queries';
 import { getInsumos } from '@/lib/insumos/queries';
 import { getBrebConfig } from '@/lib/breb/queries';
 import { ProductGrid } from '@/components/pos/ProductGrid';
@@ -16,10 +16,11 @@ export default async function POSPage() {
   const empresaId = await getEmpresaIdDelUsuario();
   if (!empresaId) redirect('/onboarding');
 
-  const [productos, categorias, ventasHoy, breb, insumos] = await Promise.all([
+  const [productos, categorias, ventasHoy, resumenHoy, breb, insumos] = await Promise.all([
     getProductosPOS(empresaId),
     getCategorias(empresaId),
     getVentasHoy(empresaId),
+    getTotalVentasHoy(empresaId),
     getBrebConfig(empresaId),
     getInsumos(empresaId),
   ]);
@@ -42,7 +43,7 @@ export default async function POSPage() {
         <ProductGrid productos={productos} categorias={categorias} bebidas={bebidas} />
 
         <div className="mt-4">
-          <VentasHoyList ventas={ventasHoy} />
+          <VentasHoyList ventas={ventasHoy} totalDia={resumenHoy.total} count={resumenHoy.count} />
         </div>
       </div>
 

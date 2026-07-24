@@ -244,11 +244,14 @@ export function ProductGrid({
                   <button
                     key={b.id}
                     type="button"
+                    disabled={b.stock <= 0}
                     onClick={() => {
                       agregar(picker, pasoBebida.opcion, b);
                       cerrarPicker();
                     }}
-                    className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-sm transition-colors hover:bg-secondary"
+                    className={`flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-sm transition-colors ${
+                      b.stock <= 0 ? 'cursor-not-allowed opacity-50' : 'hover:bg-secondary'
+                    }`}
                   >
                     <span className="flex min-w-0 flex-1 items-center gap-2 font-medium">
                       <CupSoda className="h-4 w-4 shrink-0 text-muted-foreground" />

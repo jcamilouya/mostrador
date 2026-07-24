@@ -250,7 +250,7 @@ BEGIN
   GROUP BY hora, dia_semana
   ORDER BY dia_semana, hora;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY INVOKER;
 
 -- Top productos
 CREATE OR REPLACE FUNCTION top_productos(p_empresa_id UUID, p_limite INTEGER DEFAULT 10)
@@ -270,7 +270,7 @@ BEGIN
   ORDER BY total_vendido DESC
   LIMIT p_limite;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY INVOKER;
 
 -- Balance diario
 CREATE OR REPLACE FUNCTION balance_diario(p_empresa_id UUID, p_dias INTEGER DEFAULT 30)
@@ -300,4 +300,4 @@ BEGIN
   FULL OUTER JOIN egresos_dia e ON i.dia = e.dia
   ORDER BY fecha DESC;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY INVOKER;

@@ -89,7 +89,7 @@ export async function anularVenta(ventaId: string): Promise<AnularResult> {
 
   const { data: venta } = await admin
     .from('ventas')
-    .select('id, numero_venta, estado, empresa_id, venta_items (producto_id, cantidad)')
+    .select('id, numero_venta, estado, empresa_id, cliente_id, total, venta_items (producto_id, cantidad)')
     .eq('id', ventaId)
     .eq('empresa_id', empresaId)
     .maybeSingle();
@@ -163,6 +163,27 @@ export async function anularVenta(ventaId: string): Promise<AnularResult> {
         cantidad: Number(it.cantidad) || 0,
       })),
     );
+
+    // Revertir el acumulado del cliente (la venta lo había sumado al completarse).
+    const clienteId = (venta as { cliente_id?: string | null }).cliente_id;
+    if (clienteId) {
+      const { data: cli } = await admin
+        .from('clientes')
+        .select('total_compras, cantidad_compras')
+        .eq('id', clienteId)
+        .eq('empresa_id', empresaId)
+        .maybeSingle();
+      if (cli) {
+        await admin
+          .from('clientes')
+          .update({
+            total_compras: Math.max(0, (Number(cli.total_compras) || 0) - (Number(venta.total) || 0)),
+            cantidad_compras: Math.max(0, (Number(cli.cantidad_compras) || 0) - 1),
+          })
+          .eq('id', clienteId)
+          .eq('empresa_id', empresaId);
+      }
+    }
   }
 
   revalidatePath('/dashboard');

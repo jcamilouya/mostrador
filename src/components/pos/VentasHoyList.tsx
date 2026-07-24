@@ -10,7 +10,17 @@ const METODO_LABEL: Record<string, string> = {
   mixto: 'Mixto',
 };
 
-export function VentasHoyList({ ventas }: { ventas: VentaResumen[] }) {
+export function VentasHoyList({
+  ventas,
+  totalDia,
+  count,
+}: {
+  ventas: VentaResumen[];
+  // Total y # reales del día (sin el límite de la lista). Si no vienen, se
+  // calculan de las filas visibles (compatibilidad).
+  totalDia?: number;
+  count?: number;
+}) {
   if (ventas.length === 0) {
     return (
       <div className="rounded-2xl bg-card p-6 text-center text-sm text-muted-foreground shadow-sm">
@@ -19,19 +29,20 @@ export function VentasHoyList({ ventas }: { ventas: VentaResumen[] }) {
     );
   }
 
-  const totalDia = ventas
-    .filter((v) => v.estado === 'completada')
-    .reduce((acc, v) => acc + v.total, 0);
+  const total =
+    totalDia ??
+    ventas.filter((v) => v.estado === 'completada').reduce((acc, v) => acc + v.total, 0);
+  const totalCount = count ?? ventas.length;
 
   return (
     <div className="rounded-2xl bg-card shadow-sm">
       <header className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <Receipt className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">Ventas de hoy ({ventas.length})</h2>
+          <h2 className="text-sm font-semibold">Ventas de hoy ({totalCount})</h2>
         </div>
         <p className="text-sm font-semibold tabular-nums text-[var(--ingreso)]">
-          {formatCOP(totalDia)}
+          {formatCOP(total)}
         </p>
       </header>
       <ul className="divide-y">

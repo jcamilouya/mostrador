@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { hoyBogota, inicioDiaBogotaISO, finDiaBogotaISO } from '@/lib/utils/fecha';
 
 export type DashboardStats = {
   ventasHoyTotal: number;
@@ -19,10 +20,9 @@ export type DashboardStats = {
 
 export async function getDashboardStats(empresaId: string): Promise<DashboardStats> {
   const supabase = await createClient();
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const hoyISO = hoy.toISOString();
-  const hoyDate = hoy.toISOString().slice(0, 10);
+  const inicioHoy = inicioDiaBogotaISO();
+  const finHoy = finDiaBogotaISO();
+  const hoyDate = hoyBogota();
 
   const [ventasRes, egresosRes, ultimasRes, productosRes] = await Promise.all([
     supabase
@@ -30,7 +30,8 @@ export async function getDashboardStats(empresaId: string): Promise<DashboardSta
       .select('total')
       .eq('empresa_id', empresaId)
       .eq('estado', 'completada')
-      .gte('created_at', hoyISO),
+      .gte('created_at', inicioHoy)
+      .lt('created_at', finHoy),
     supabase
       .from('egresos')
       .select('monto')

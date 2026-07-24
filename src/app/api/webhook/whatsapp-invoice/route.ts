@@ -1,7 +1,15 @@
 import { NextResponse } from 'next/server';
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CATEGORIAS_EGRESO } from '@/lib/egresos/schemas';
+
+/** Compara dos strings en tiempo constante (evita oráculos de timing). */
+function secretosIguales(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
 
 const payloadSchema = z.object({
   numero_emisor: z.string().min(5),
@@ -18,9 +26,10 @@ function normalizarNumero(n: string): string {
 }
 
 export async function POST(request: Request) {
-  // Auth simple por header secret
+  // Auth por header secret (comparación en tiempo constante, fail-closed).
   const secret = request.headers.get('x-webhook-secret');
-  if (!secret || secret !== process.env.WHATSAPP_WEBHOOK_SECRET) {
+  const esperado = process.env.WHATSAPP_WEBHOOK_SECRET;
+  if (!secret || !esperado || !secretosIguales(secret, esperado)) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
 

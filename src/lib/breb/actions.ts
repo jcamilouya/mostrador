@@ -102,12 +102,17 @@ export async function confirmarVentaBreb(ventaId: string): Promise<ConfirmarResu
     .eq('venta_id', ventaId)
     .not('insumo_extra_id', 'is', null);
 
-  const { error: updErr } = await admin
+  // UPDATE condicional: solo completa si SIGUE pendiente. Si el webhook de
+  // Bancolombia (u otra pestaña) la confirmó primero, no volvemos a descontar.
+  const { data: completadas, error: updErr } = await admin
     .from('ventas')
     .update({ estado: 'completada' })
     .eq('id', ventaId)
-    .eq('empresa_id', empresaId);
+    .eq('empresa_id', empresaId)
+    .eq('estado', 'pendiente')
+    .select('id');
   if (updErr) return { ok: false, error: 'No pudimos confirmar la venta.' };
+  if (!completadas || completadas.length === 0) return { ok: true }; // ya estaba confirmada
 
   for (const it of items ?? []) {
     if (!it.producto_id) continue;

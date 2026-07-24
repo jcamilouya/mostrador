@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { normalizarVariantes, type VarianteItem } from '@/lib/inventario/queries';
+import { inicioDiaBogotaISO, finDiaBogotaISO } from '@/lib/utils/fecha';
 
 export type ProductoPOS = {
   id: string;
@@ -54,14 +55,12 @@ export async function getProductosPOS(empresaId: string): Promise<ProductoPOS[]>
 
 export async function getVentasHoy(empresaId: string): Promise<VentaResumen[]> {
   const supabase = await createClient();
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-
   const { data } = await supabase
     .from('ventas')
     .select('id, numero_venta, total, metodo_pago, estado, created_at, venta_items (id)')
     .eq('empresa_id', empresaId)
-    .gte('created_at', hoy.toISOString())
+    .gte('created_at', inicioDiaBogotaISO())
+    .lt('created_at', finDiaBogotaISO())
     .order('created_at', { ascending: false })
     .limit(20);
 
@@ -75,4 +74,23 @@ export async function getVentasHoy(empresaId: string): Promise<VentaResumen[]> {
     items_count: Array.isArray(v.venta_items) ? v.venta_items.length : 0,
     created_at: v.created_at,
   }));
+}
+
+/** Total y # de ventas COMPLETADAS de hoy (sin el límite de 20 de la lista). */
+export async function getTotalVentasHoy(
+  empresaId: string,
+): Promise<{ total: number; count: number }> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('ventas')
+    .select('total')
+    .eq('empresa_id', empresaId)
+    .eq('estado', 'completada')
+    .gte('created_at', inicioDiaBogotaISO())
+    .lt('created_at', finDiaBogotaISO());
+  const filas = data ?? [];
+  return {
+    total: filas.reduce((acc, v) => acc + Number(v.total), 0),
+    count: filas.length,
+  };
 }

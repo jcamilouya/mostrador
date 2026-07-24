@@ -14,16 +14,19 @@ export async function POST(req: Request) {
   const rawBody = await req.text();
   if (!rawBody) return NextResponse.json({ ok: true });
 
-  // Verificación de firma — cuando Bancolombia entregue la clave/certificado,
-  // activar la verificación JWT aquí. Por ahora solo en sandbox sin firma.
+  // FAIL-CLOSED: sin el secreto configurado NO se procesa nada (la integración
+  // Bre-B/Bancolombia está inactiva). Esto evita que un tercero que adivine un
+  // breb_transaccion_id marque ventas como pagadas sin que entre dinero.
   const secret = process.env.BANCOLOMBIA_WEBHOOK_SECRET;
-  if (secret) {
-    // TODO: verificar JWT con la clave de Bancolombia
-    // Los headers de firma varían según la versión de su API; consultar docs.
-    const firma = req.headers.get('x-bancolombia-signature') ?? req.headers.get('authorization');
-    if (!firma) {
-      return NextResponse.json({ ok: false, error: 'Sin firma' }, { status: 401 });
-    }
+  if (!secret) {
+    return NextResponse.json({ ok: false, error: 'Webhook no configurado' }, { status: 503 });
+  }
+  // TODO(producción): verificar la firma/JWT real de Bancolombia con `secret`
+  // (crypto.timingSafeEqual) ANTES de tocar la BD. Mientras tanto exigimos al
+  // menos que llegue el header de firma.
+  const firma = req.headers.get('x-bancolombia-signature') ?? req.headers.get('authorization');
+  if (!firma) {
+    return NextResponse.json({ ok: false, error: 'Sin firma' }, { status: 401 });
   }
 
   let notif: Record<string, unknown>;
@@ -66,15 +69,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // Marcar la venta como completada
-  const { error } = await admin
+  // Marcar completada SOLO si sigue pendiente (evita doble descuento si la
+  // confirmación manual la completó primero).
+  const { data: completadas, error } = await admin
     .from('ventas')
     .update({ estado: 'completada', breb_estado: 'confirmado' })
-    .eq('id', venta.id);
+    .eq('id', venta.id)
+    .eq('estado', 'pendiente')
+    .select('id');
 
   if (error) {
     console.error('[Webhook Bancolombia] Error al confirmar venta:', error);
     return NextResponse.json({ ok: false }, { status: 500 });
+  }
+  if (!completadas || completadas.length === 0) {
+    return NextResponse.json({ ok: true }); // ya confirmada por otra vía
   }
 
   // Descontar stock de los items de la venta confirmada

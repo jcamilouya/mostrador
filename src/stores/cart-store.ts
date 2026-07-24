@@ -34,16 +34,22 @@ export const useCart = create<CartState>((set, get) => ({
   add: (item) =>
     set((state) => {
       const lineId = calcularLineId(item);
+      // Tope por PRODUCTO: la suma de todas sus líneas (opciones/bebidas) no
+      // puede superar su stock. Evita sobrevender con varias líneas del mismo
+      // producto (ej. 5 "Sencillo" + 5 "Combo" de un producto con 5 en stock).
+      const yaDelProducto = state.items
+        .filter((i) => i.producto_id === item.producto_id)
+        .reduce((acc, i) => acc + i.cantidad, 0);
+      if (yaDelProducto >= item.stock_disponible) return state;
+
       const existing = state.items.find((i) => i.lineId === lineId);
       if (existing) {
-        const nuevaCantidad = Math.min(existing.cantidad + 1, item.stock_disponible);
         return {
           items: state.items.map((i) =>
-            i.lineId === lineId ? { ...i, cantidad: nuevaCantidad } : i,
+            i.lineId === lineId ? { ...i, cantidad: i.cantidad + 1 } : i,
           ),
         };
       }
-      if (item.stock_disponible <= 0) return state;
       return { items: [...state.items, { ...item, lineId, cantidad: 1 }] };
     }),
   setCantidad: (lineId, cantidad) =>
@@ -51,11 +57,17 @@ export const useCart = create<CartState>((set, get) => ({
       if (cantidad <= 0) {
         return { items: state.items.filter((i) => i.lineId !== lineId) };
       }
+      const linea = state.items.find((i) => i.lineId === lineId);
+      if (!linea) return state;
+      // Máximo para esta línea = stock del producto menos lo que ya tienen las
+      // otras líneas del mismo producto.
+      const otras = state.items
+        .filter((i) => i.producto_id === linea.producto_id && i.lineId !== lineId)
+        .reduce((acc, i) => acc + i.cantidad, 0);
+      const max = Math.max(0, linea.stock_disponible - otras);
       return {
         items: state.items.map((i) =>
-          i.lineId === lineId
-            ? { ...i, cantidad: Math.min(cantidad, i.stock_disponible) }
-            : i,
+          i.lineId === lineId ? { ...i, cantidad: Math.min(cantidad, max) } : i,
         ),
       };
     }),

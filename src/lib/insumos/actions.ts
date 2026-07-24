@@ -92,6 +92,29 @@ export async function actualizarInsumo(
 
   // El stock se cambia con "Agregar" o "Ajustar", no aquí.
   const admin = createAdminClient();
+
+  // No permitir cambiar la unidad si hay stock o recetas: reescalaría los
+  // números en silencio (2000 g pasarían a interpretarse como 2000 kg).
+  const { data: actual } = await admin
+    .from('insumos')
+    .select('unidad, stock_actual')
+    .eq('id', id)
+    .eq('empresa_id', empresaId)
+    .maybeSingle();
+  if (actual && (actual.unidad as string) !== d.unidad) {
+    if ((Number(actual.stock_actual) || 0) > 0) {
+      return { error: 'No puedes cambiar la unidad de un ítem con stock. Déjalo en 0 (Ajustar) primero, o crea uno nuevo.' };
+    }
+    const { count } = await admin
+      .from('producto_receta')
+      .select('id', { count: 'exact', head: true })
+      .eq('empresa_id', empresaId)
+      .eq('insumo_id', id);
+    if ((count ?? 0) > 0) {
+      return { error: 'No puedes cambiar la unidad de un ítem usado en recetas. Quítalo de las recetas primero.' };
+    }
+  }
+
   const { error } = await admin
     .from('insumos')
     .update({

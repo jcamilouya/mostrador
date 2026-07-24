@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getPlanInfo } from '@/lib/plan/queries';
 import { getReporteData, type TipoReporte } from '@/lib/reportes/queries';
 import { generarPDF, generarExcel, nombreArchivo } from '@/lib/reportes/generar';
 
@@ -33,6 +34,12 @@ export async function GET(request: NextRequest) {
     .maybeSingle();
   if (!usuario?.empresa_id) {
     return NextResponse.json({ error: 'Sin empresa' }, { status: 403 });
+  }
+
+  // Reportes es función Pro.
+  const plan = await getPlanInfo(usuario.empresa_id);
+  if (!plan.esPro) {
+    return NextResponse.json({ error: 'Función Pro' }, { status: 403 });
   }
 
   const data = await getReporteData(usuario.empresa_id, desde, hasta);

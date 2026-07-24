@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { procesarFactura } from '@/lib/whatsapp/procesar-factura';
 import { confirmarEgresoPendiente, cancelarEgresoPendiente } from '@/lib/whatsapp/confirmar-egreso';
@@ -19,9 +20,28 @@ export async function GET(req: Request) {
 
 // POST — recibir mensajes de WhatsApp
 export async function POST(req: Request) {
+  const rawBody = await req.text();
+
+  // FAIL-CLOSED: verificar la firma HMAC de Meta (X-Hub-Signature-256) con el
+  // App Secret. Sin el secreto no se procesa: evita que cualquiera que conozca
+  // el número del negocio inyecte gastos o dispare la IA (costo/DoS).
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  if (!appSecret) {
+    return NextResponse.json({ ok: false, error: 'Webhook no configurado' }, { status: 503 });
+  }
+  const firma = req.headers.get('x-hub-signature-256') ?? '';
+  const esperado =
+    'sha256=' + crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
+  if (
+    firma.length !== esperado.length ||
+    !crypto.timingSafeEqual(Buffer.from(firma), Buffer.from(esperado))
+  ) {
+    return new NextResponse(null, { status: 401 });
+  }
+
   let body: Record<string, unknown>;
   try {
-    body = await req.json();
+    body = JSON.parse(rawBody);
   } catch {
     return NextResponse.json({ ok: false }, { status: 400 });
   }
