@@ -1,11 +1,90 @@
 /**
- * Helpers server-side (NO son server actions) para mover stock de insumos según
- * las recetas. Se importan desde las acciones de POS/Bre-B y de productos.
+ * Helpers server-side (NO son server actions) para mover stock según las
+ * recetas y las bebidas. Se importan desde las acciones de POS/Bre-B/productos.
+ *
+ * El stock se mueve con las funciones SQL atómicas `ajustar_stock_*`
+ * (migración 011) para evitar carreras entre ventas simultáneas. Si esas
+ * funciones aún no existen (migración sin correr), degradan a read-modify-write.
  */
 import { createAdminClient } from '@/lib/supabase/admin';
 
 type Admin = ReturnType<typeof createAdminClient>;
 type ItemVendido = { producto_id: string; cantidad: number };
+
+/** Ajusta el stock de un PRODUCTO en +/- delta, atómico (con fallback). */
+export async function ajustarStockProducto(
+  admin: Admin,
+  empresaId: string,
+  productoId: string,
+  delta: number,
+): Promise<void> {
+  const { error } = await admin.rpc('ajustar_stock_producto', {
+    p_id: productoId,
+    p_empresa_id: empresaId,
+    p_delta: delta,
+  });
+  if (!error) return;
+  // Fallback (migración 011 sin correr): read-modify-write.
+  const { data } = await admin
+    .from('productos')
+    .select('stock_actual')
+    .eq('id', productoId)
+    .eq('empresa_id', empresaId)
+    .single();
+  const nuevo = Math.max(0, (Number(data?.stock_actual) || 0) + delta);
+  await admin
+    .from('productos')
+    .update({ stock_actual: nuevo, updated_at: new Date().toISOString() })
+    .eq('id', productoId)
+    .eq('empresa_id', empresaId);
+}
+
+/** Ajusta el stock de un INSUMO en +/- delta, atómico (con fallback). */
+export async function ajustarStockInsumo(
+  admin: Admin,
+  empresaId: string,
+  insumoId: string,
+  delta: number,
+): Promise<void> {
+  const { error } = await admin.rpc('ajustar_stock_insumo', {
+    p_id: insumoId,
+    p_empresa_id: empresaId,
+    p_delta: delta,
+  });
+  if (!error) return;
+  const { data } = await admin
+    .from('insumos')
+    .select('stock_actual')
+    .eq('id', insumoId)
+    .eq('empresa_id', empresaId)
+    .single();
+  const nuevo = Math.max(0, (Number(data?.stock_actual) || 0) + delta);
+  await admin
+    .from('insumos')
+    .update({ stock_actual: nuevo, updated_at: new Date().toISOString() })
+    .eq('id', insumoId)
+    .eq('empresa_id', empresaId);
+}
+
+async function movInsumo(
+  admin: Admin,
+  empresaId: string,
+  insumoId: string,
+  tipo: 'salida' | 'entrada',
+  cantidad: number,
+  ventaId: string,
+  notas: string,
+): Promise<void> {
+  await admin.from('movimientos_insumos').insert({
+    empresa_id: empresaId,
+    insumo_id: insumoId,
+    tipo,
+    cantidad,
+    referencia_tipo: 'venta',
+    referencia_id: ventaId,
+    notas,
+  });
+}
 
 /** Suma el consumo de insumos de una lista de items vendidos (insumo_id → cantidad). */
 async function calcularConsumo(
@@ -44,27 +123,8 @@ export async function descontarIngredientesPorVenta(
   const consumo = await calcularConsumo(admin, empresaId, items);
   for (const [insumoId, cantidad] of consumo) {
     if (cantidad <= 0) continue;
-    const { data: ins } = await admin
-      .from('insumos')
-      .select('stock_actual')
-      .eq('id', insumoId)
-      .eq('empresa_id', empresaId)
-      .single();
-    const nuevo = Math.max(0, (Number(ins?.stock_actual) || 0) - cantidad);
-    await admin
-      .from('insumos')
-      .update({ stock_actual: nuevo, updated_at: new Date().toISOString() })
-      .eq('id', insumoId)
-      .eq('empresa_id', empresaId);
-    await admin.from('movimientos_insumos').insert({
-      empresa_id: empresaId,
-      insumo_id: insumoId,
-      tipo: 'salida',
-      cantidad,
-      referencia_tipo: 'venta',
-      referencia_id: ventaId,
-      notas: `Venta #${numeroVenta}`,
-    });
+    await ajustarStockInsumo(admin, empresaId, insumoId, -cantidad);
+    await movInsumo(admin, empresaId, insumoId, 'salida', cantidad, ventaId, `Venta #${numeroVenta}`);
   }
 }
 
@@ -79,27 +139,8 @@ export async function devolverIngredientesPorVenta(
   const consumo = await calcularConsumo(admin, empresaId, items);
   for (const [insumoId, cantidad] of consumo) {
     if (cantidad <= 0) continue;
-    const { data: ins } = await admin
-      .from('insumos')
-      .select('stock_actual')
-      .eq('id', insumoId)
-      .eq('empresa_id', empresaId)
-      .single();
-    const nuevo = (Number(ins?.stock_actual) || 0) + cantidad;
-    await admin
-      .from('insumos')
-      .update({ stock_actual: nuevo, updated_at: new Date().toISOString() })
-      .eq('id', insumoId)
-      .eq('empresa_id', empresaId);
-    await admin.from('movimientos_insumos').insert({
-      empresa_id: empresaId,
-      insumo_id: insumoId,
-      tipo: 'entrada',
-      cantidad,
-      referencia_tipo: 'venta',
-      referencia_id: ventaId,
-      notas: `Venta #${numeroVenta} anulada`,
-    });
+    await ajustarStockInsumo(admin, empresaId, insumoId, cantidad);
+    await movInsumo(admin, empresaId, insumoId, 'entrada', cantidad, ventaId, `Venta #${numeroVenta} anulada`);
   }
 }
 
@@ -115,28 +156,8 @@ export async function descontarInsumosVendidos(
 ): Promise<void> {
   for (const b of bebidas) {
     if (!b.insumo_id || b.cantidad <= 0) continue;
-    const { data: ins } = await admin
-      .from('insumos')
-      .select('stock_actual')
-      .eq('id', b.insumo_id)
-      .eq('empresa_id', empresaId)
-      .single();
-    if (!ins) continue;
-    const nuevo = Math.max(0, (Number(ins.stock_actual) || 0) - b.cantidad);
-    await admin
-      .from('insumos')
-      .update({ stock_actual: nuevo, updated_at: new Date().toISOString() })
-      .eq('id', b.insumo_id)
-      .eq('empresa_id', empresaId);
-    await admin.from('movimientos_insumos').insert({
-      empresa_id: empresaId,
-      insumo_id: b.insumo_id,
-      tipo: 'salida',
-      cantidad: b.cantidad,
-      referencia_tipo: 'venta',
-      referencia_id: ventaId,
-      notas: `Venta #${numeroVenta} (bebida)`,
-    });
+    await ajustarStockInsumo(admin, empresaId, b.insumo_id, -b.cantidad);
+    await movInsumo(admin, empresaId, b.insumo_id, 'salida', b.cantidad, ventaId, `Venta #${numeroVenta} (bebida)`);
   }
 }
 
@@ -150,28 +171,8 @@ export async function devolverInsumosVendidos(
 ): Promise<void> {
   for (const b of bebidas) {
     if (!b.insumo_id || b.cantidad <= 0) continue;
-    const { data: ins } = await admin
-      .from('insumos')
-      .select('stock_actual')
-      .eq('id', b.insumo_id)
-      .eq('empresa_id', empresaId)
-      .single();
-    if (!ins) continue;
-    const nuevo = (Number(ins.stock_actual) || 0) + b.cantidad;
-    await admin
-      .from('insumos')
-      .update({ stock_actual: nuevo, updated_at: new Date().toISOString() })
-      .eq('id', b.insumo_id)
-      .eq('empresa_id', empresaId);
-    await admin.from('movimientos_insumos').insert({
-      empresa_id: empresaId,
-      insumo_id: b.insumo_id,
-      tipo: 'entrada',
-      cantidad: b.cantidad,
-      referencia_tipo: 'venta',
-      referencia_id: ventaId,
-      notas: `Venta #${numeroVenta} anulada (bebida devuelta)`,
-    });
+    await ajustarStockInsumo(admin, empresaId, b.insumo_id, b.cantidad);
+    await movInsumo(admin, empresaId, b.insumo_id, 'entrada', b.cantidad, ventaId, `Venta #${numeroVenta} anulada (bebida devuelta)`);
   }
 }
 

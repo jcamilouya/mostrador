@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { descontarIngredientesPorVenta, descontarInsumosVendidos } from '@/lib/insumos/consumo';
+import {
+  descontarIngredientesPorVenta,
+  descontarInsumosVendidos,
+  ajustarStockProducto,
+} from '@/lib/insumos/consumo';
 
 /**
  * Webhook de notificaciones de pago de Bancolombia Cobros QR.
@@ -94,16 +98,7 @@ export async function POST(req: Request) {
 
   for (const item of items ?? []) {
     if (!item.producto_id) continue;
-    const { data: prod } = await admin
-      .from('productos')
-      .select('stock_actual')
-      .eq('id', item.producto_id)
-      .single();
-    const stockNuevo = Math.max(0, (prod?.stock_actual ?? 0) - item.cantidad);
-    await admin
-      .from('productos')
-      .update({ stock_actual: stockNuevo, updated_at: new Date().toISOString() })
-      .eq('id', item.producto_id);
+    await ajustarStockProducto(admin, venta.empresa_id, item.producto_id, -item.cantidad);
     await admin.from('movimientos_inventario').insert({
       empresa_id: venta.empresa_id,
       producto_id: item.producto_id,

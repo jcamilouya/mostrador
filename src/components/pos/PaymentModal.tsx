@@ -56,6 +56,8 @@ export function PaymentModal({
   const [reciboEnviado, setReciboEnviado] = useState(false);
   const [pending, startTransition] = useTransition();
   const [copiado, setCopiado] = useState(false);
+  // Llave única por cobro: si el internet se cae y se reintenta, no se duplica.
+  const [idemKey, setIdemKey] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -72,6 +74,11 @@ export function PaymentModal({
       setClienteSnap(null);
       setReciboEnviado(false);
       setCopiado(false);
+      setIdemKey(
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
     }
   }, [open]);
 
@@ -124,12 +131,14 @@ export function PaymentModal({
           metodo_pago: metodo,
           confirmado,
           cliente_id: cliente?.id ?? null,
+          idempotency_key: idemKey,
           items: items.map((i) => ({
             producto_id: i.producto_id,
             cantidad: i.cantidad,
             precio_unitario: i.precio_venta,
             precio_compra: i.precio_compra,
             nombre: i.nombre,
+            variante: i.variante ?? null,
             insumo_extra_id: i.insumo_extra_id ?? null,
           })),
         });

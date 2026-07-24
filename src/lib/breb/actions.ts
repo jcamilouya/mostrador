@@ -3,7 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { descontarIngredientesPorVenta, descontarInsumosVendidos } from '@/lib/insumos/consumo';
+import {
+  descontarIngredientesPorVenta,
+  descontarInsumosVendidos,
+  ajustarStockProducto,
+} from '@/lib/insumos/consumo';
 import { configuracionSchema } from './schemas';
 
 export type ConfigState = { ok?: boolean; error?: string };
@@ -116,18 +120,7 @@ export async function confirmarVentaBreb(ventaId: string): Promise<ConfirmarResu
 
   for (const it of items ?? []) {
     if (!it.producto_id) continue;
-    const { data: prod } = await admin
-      .from('productos')
-      .select('stock_actual')
-      .eq('id', it.producto_id)
-      .eq('empresa_id', empresaId)
-      .single();
-    const stockNuevo = Math.max(0, (prod?.stock_actual ?? 0) - it.cantidad);
-    await admin
-      .from('productos')
-      .update({ stock_actual: stockNuevo, updated_at: new Date().toISOString() })
-      .eq('id', it.producto_id)
-      .eq('empresa_id', empresaId);
+    await ajustarStockProducto(admin, empresaId, it.producto_id, -it.cantidad);
     await admin.from('movimientos_inventario').insert({
       empresa_id: empresaId,
       producto_id: it.producto_id,

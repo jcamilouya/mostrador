@@ -3,7 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { devolverIngredientesPorVenta, devolverInsumosVendidos } from '@/lib/insumos/consumo';
+import {
+  devolverIngredientesPorVenta,
+  devolverInsumosVendidos,
+  ajustarStockProducto,
+} from '@/lib/insumos/consumo';
 
 export type VentaItemDetalle = {
   id: string;
@@ -113,18 +117,7 @@ export async function anularVenta(ventaId: string): Promise<AnularResult> {
     for (const it of items) {
       if (!it.producto_id) continue;
       const cantidad = Number(it.cantidad) || 0;
-      const { data: prod } = await admin
-        .from('productos')
-        .select('stock_actual')
-        .eq('id', it.producto_id)
-        .eq('empresa_id', empresaId)
-        .single();
-      const stockNuevo = (prod?.stock_actual ?? 0) + cantidad;
-      await admin
-        .from('productos')
-        .update({ stock_actual: stockNuevo, updated_at: new Date().toISOString() })
-        .eq('id', it.producto_id)
-        .eq('empresa_id', empresaId);
+      await ajustarStockProducto(admin, empresaId, it.producto_id, cantidad);
       await admin.from('movimientos_inventario').insert({
         empresa_id: empresaId,
         producto_id: it.producto_id,
