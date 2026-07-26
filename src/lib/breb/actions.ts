@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import {
   descontarIngredientesPorVenta,
   descontarInsumosVendidos,
-  ajustarStockProducto,
+  descontarStockProductosPorVenta,
 } from '@/lib/insumos/consumo';
 import { configuracionSchema } from './schemas';
 
@@ -118,19 +118,15 @@ export async function confirmarVentaBreb(ventaId: string): Promise<ConfirmarResu
   if (updErr) return { ok: false, error: 'No pudimos confirmar la venta.' };
   if (!completadas || completadas.length === 0) return { ok: true }; // ya estaba confirmada
 
-  for (const it of items ?? []) {
-    if (!it.producto_id) continue;
-    await ajustarStockProducto(admin, empresaId, it.producto_id, -it.cantidad);
-    await admin.from('movimientos_inventario').insert({
-      empresa_id: empresaId,
-      producto_id: it.producto_id,
-      tipo: 'salida',
-      cantidad: it.cantidad,
-      referencia_tipo: 'venta',
-      referencia_id: ventaId,
-      notas: `Venta #${venta.numero_venta} (Bre-B confirmada)`,
-    });
-  }
+  await descontarStockProductosPorVenta(
+    admin,
+    empresaId,
+    ventaId,
+    venta.numero_venta,
+    (items ?? [])
+      .filter((it) => it.producto_id)
+      .map((it) => ({ producto_id: it.producto_id as string, cantidad: it.cantidad })),
+  );
 
   // Descontar ingredientes de la venta confirmada (según recetas).
   await descontarIngredientesPorVenta(

@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import {
   devolverIngredientesPorVenta,
   devolverInsumosVendidos,
-  ajustarStockProducto,
+  devolverStockProductosPorVenta,
 } from '@/lib/insumos/consumo';
 
 export type VentaItemDetalle = {
@@ -114,20 +114,15 @@ export async function anularVenta(ventaId: string): Promise<AnularResult> {
 
   if (restaurarStock) {
     const items = Array.isArray(venta.venta_items) ? venta.venta_items : [];
-    for (const it of items) {
-      if (!it.producto_id) continue;
-      const cantidad = Number(it.cantidad) || 0;
-      await ajustarStockProducto(admin, empresaId, it.producto_id, cantidad);
-      await admin.from('movimientos_inventario').insert({
-        empresa_id: empresaId,
-        producto_id: it.producto_id,
-        tipo: 'entrada',
-        cantidad,
-        referencia_tipo: 'anulacion',
-        referencia_id: ventaId,
-        notas: `Anulación venta #${venta.numero_venta} (stock restaurado)`,
-      });
-    }
+    await devolverStockProductosPorVenta(
+      admin,
+      empresaId,
+      ventaId,
+      venta.numero_venta,
+      items
+        .filter((it) => it.producto_id)
+        .map((it) => ({ producto_id: it.producto_id as string, cantidad: Number(it.cantidad) || 0 })),
+    );
 
     // Devolver también los ingredientes que había consumido la venta.
     await devolverIngredientesPorVenta(

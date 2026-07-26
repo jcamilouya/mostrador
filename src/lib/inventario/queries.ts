@@ -18,6 +18,8 @@ export type Producto = {
   imagen_url: string | null;
   variantes: VarianteItem[];
   pide_bebida: boolean;
+  /** Si el producto es una bebida del Inventario (stock único), su insumo. */
+  insumo_id: string | null;
   categorias: { nombre: string; color: string } | null;
 };
 
@@ -60,14 +62,28 @@ export async function getProductos(empresaId: string): Promise<Producto[]> {
     .order('nombre');
 
   if (error || !data) return [];
-  return data.map((p) => ({
-    ...p,
-    precio_compra: Number(p.precio_compra),
-    precio_venta: Number(p.precio_venta),
-    variantes: normalizarVariantes(p.variantes),
-    pide_bebida: p.pide_bebida === true,
-    categorias: Array.isArray(p.categorias) ? p.categorias[0] ?? null : p.categorias,
-  })) as Producto[];
+
+  // Productos vinculados a una bebida → mostrar el stock del insumo (fuente única).
+  const linkIds = data.map((p) => p.insumo_id).filter(Boolean) as string[];
+  const stockInsumo = new Map<string, number>();
+  if (linkIds.length > 0) {
+    const { data: ins } = await supabase.from('insumos').select('id, stock_actual').in('id', linkIds);
+    for (const i of ins ?? []) stockInsumo.set(i.id as string, Number(i.stock_actual) || 0);
+  }
+
+  return data.map((p) => {
+    const linked = p.insumo_id ? stockInsumo.get(p.insumo_id) : undefined;
+    return {
+      ...p,
+      precio_compra: Number(p.precio_compra),
+      precio_venta: Number(p.precio_venta),
+      stock_actual: linked !== undefined ? Math.floor(linked) : p.stock_actual,
+      variantes: normalizarVariantes(p.variantes),
+      pide_bebida: p.pide_bebida === true,
+      insumo_id: p.insumo_id ?? null,
+      categorias: Array.isArray(p.categorias) ? p.categorias[0] ?? null : p.categorias,
+    };
+  }) as Producto[];
 }
 
 export async function getProducto(empresaId: string, id: string): Promise<Producto | null> {
@@ -85,6 +101,7 @@ export async function getProducto(empresaId: string, id: string): Promise<Produc
     precio_venta: Number(data.precio_venta),
     variantes: normalizarVariantes(data.variantes),
     pide_bebida: data.pide_bebida === true,
+    insumo_id: data.insumo_id ?? null,
     categorias: Array.isArray(data.categorias) ? data.categorias[0] ?? null : data.categorias,
   } as Producto;
 }

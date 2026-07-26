@@ -692,31 +692,41 @@ export function ProductForm({
 
           <div className="rounded-3xl bg-card p-6 shadow-sm space-y-4">
             <h2 className="font-semibold">Inventario</h2>
-            <div className="space-y-2">
-              <Label htmlFor="stock_actual">Stock actual</Label>
-              <Input
-                id="stock_actual"
-                name="stock_actual"
-                type="number"
-                min="0"
-                defaultValue={producto?.stock_actual ?? 0}
-                className="rounded-xl h-11 tabular-nums"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="stock_minimo">
-                Stock mínimo
-                <span className="ml-1 text-xs text-muted-foreground">(alerta)</span>
-              </Label>
-              <Input
-                id="stock_minimo"
-                name="stock_minimo"
-                type="number"
-                min="0"
-                defaultValue={producto?.stock_minimo ?? 5}
-                className="rounded-xl h-11 tabular-nums"
-              />
-            </div>
+            {producto?.insumo_id ? (
+              <p className="text-sm text-muted-foreground">
+                🥤 El stock de este producto se controla desde{' '}
+                <strong>Inventario → Bebidas</strong>. Es el mismo stock: al reponer inventario o
+                vender, se sincroniza solo.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="stock_actual">Stock actual</Label>
+                  <Input
+                    id="stock_actual"
+                    name="stock_actual"
+                    type="number"
+                    min="0"
+                    defaultValue={producto?.stock_actual ?? 0}
+                    className="rounded-xl h-11 tabular-nums"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="stock_minimo">
+                    Stock mínimo
+                    <span className="ml-1 text-xs text-muted-foreground">(alerta)</span>
+                  </Label>
+                  <Input
+                    id="stock_minimo"
+                    name="stock_minimo"
+                    type="number"
+                    min="0"
+                    defaultValue={producto?.stock_minimo ?? 5}
+                    className="rounded-xl h-11 tabular-nums"
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

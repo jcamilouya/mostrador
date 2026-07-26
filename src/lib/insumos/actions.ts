@@ -6,7 +6,14 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { insumoSchema, agregarStockSchema, ajusteStockSchema } from './schemas';
 import { convertir, UNIDAD_VALUES } from './units';
 
-export type InsumoState = { ok?: boolean; error?: string };
+export type InsumoState = {
+  ok?: boolean;
+  error?: string;
+  // Al crear una bebida: datos para ofrecer crearla como producto vendible.
+  insumoId?: string;
+  nombre?: string;
+  sugerirProducto?: boolean;
+};
 
 async function requireEmpresaId(): Promise<string | null> {
   const supabase = await createClient();
@@ -67,7 +74,85 @@ export async function crearInsumo(_prev: InsumoState, formData: FormData): Promi
     });
   }
 
+  // Si es bebida y no existe ya un producto con ese nombre, sugerir venderla.
+  let sugerirProducto = false;
+  if (d.tipo === 'bebidas') {
+    const { data: existente } = await admin
+      .from('productos')
+      .select('id')
+      .eq('empresa_id', empresaId)
+      .ilike('nombre', d.nombre)
+      .limit(1);
+    sugerirProducto = !existente || existente.length === 0;
+  }
+
   refrescar();
+  return { ok: true, insumoId: insumo.id, nombre: d.nombre, sugerirProducto };
+}
+
+/**
+ * Crea un PRODUCTO vendible a partir de una bebida del Inventario, enlazado por
+ * `insumo_id`. El stock queda ÚNICO: la fuente de verdad es el insumo.
+ */
+export async function crearProductoDesdeBebida(
+  insumoId: string,
+  precioVenta: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const empresaId = await requireEmpresaId();
+  if (!empresaId) return { ok: false, error: 'No autenticado' };
+  const precio = Number(precioVenta);
+  if (!Number.isFinite(precio) || precio <= 0) {
+    return { ok: false, error: 'Ingresa un precio de venta válido' };
+  }
+
+  const admin = createAdminClient();
+  const { data: insumo } = await admin
+    .from('insumos')
+    .select('nombre, stock_actual, costo_unitario')
+    .eq('id', insumoId)
+    .eq('empresa_id', empresaId)
+    .single();
+  if (!insumo) return { ok: false, error: 'Bebida no encontrada' };
+
+  // Categoría "Bebidas" (crear si no existe).
+  let categoriaId: string | null = null;
+  const { data: cat } = await admin
+    .from('categorias')
+    .select('id')
+    .eq('empresa_id', empresaId)
+    .ilike('nombre', 'Bebidas')
+    .limit(1)
+    .maybeSingle();
+  if (cat) {
+    categoriaId = cat.id;
+  } else {
+    const { data: nueva } = await admin
+      .from('categorias')
+      .insert({ empresa_id: empresaId, nombre: 'Bebidas', color: '#0ea5e9' })
+      .select('id')
+      .single();
+    categoriaId = nueva?.id ?? null;
+  }
+
+  const { error } = await admin.from('productos').insert({
+    empresa_id: empresaId,
+    nombre: insumo.nombre,
+    categoria_id: categoriaId,
+    precio_compra: Number(insumo.costo_unitario) || 0,
+    precio_venta: precio,
+    stock_actual: Math.floor(Number(insumo.stock_actual) || 0),
+    stock_minimo: 0,
+    activo: true,
+    variantes: [],
+    insumo_id: insumoId,
+  });
+  if (error) {
+    return { ok: false, error: 'No se pudo crear el producto. ¿Corriste la migración 012?' };
+  }
+
+  revalidatePath('/dashboard/inventario');
+  revalidatePath('/dashboard/pos');
+  revalidatePath('/dashboard');
   return { ok: true };
 }
 

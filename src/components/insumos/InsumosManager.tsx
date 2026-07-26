@@ -1,7 +1,8 @@
 'use client';
 
-import { useActionState, useEffect, useMemo, useState } from 'react';
+import { useActionState, useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -11,13 +12,14 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, PackagePlus, SlidersHorizontal, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, PackagePlus, SlidersHorizontal, Trash2, AlertTriangle, CupSoda, Loader2 } from 'lucide-react';
 import {
   crearInsumo,
   actualizarInsumo,
   agregarStock,
   ajustarStock,
   archivarInsumo,
+  crearProductoDesdeBebida,
   type InsumoState,
 } from '@/lib/insumos/actions';
 import { UNIDADES, unidadesCompatibles, unidadCorta, formatCantidad } from '@/lib/insumos/units';
@@ -30,6 +32,7 @@ type Modal =
   | { tipo: 'editar'; insumo: InsumoConAlerta }
   | { tipo: 'agregar'; insumo: InsumoConAlerta }
   | { tipo: 'ajustar'; insumo: InsumoConAlerta }
+  | { tipo: 'ofrecerProducto'; insumoId: string; nombre: string }
   | null;
 
 export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
@@ -150,7 +153,17 @@ export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
               <DialogHeader>
                 <DialogTitle>Nuevo en {modDef?.label}</DialogTitle>
               </DialogHeader>
-              <InsumoForm defaultTipo={modulo} onDone={cerrar} />
+              <InsumoForm
+                defaultTipo={modulo}
+                onDone={(res) => {
+                  router.refresh();
+                  if (res?.sugerirProducto && res.insumoId) {
+                    setModal({ tipo: 'ofrecerProducto', insumoId: res.insumoId, nombre: res.nombre ?? '' });
+                  } else {
+                    setModal(null);
+                  }
+                }}
+              />
             </>
           )}
           {modal?.tipo === 'editar' && (
@@ -175,6 +188,14 @@ export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
                 <DialogTitle>Ajustar stock — {modal.insumo.nombre}</DialogTitle>
               </DialogHeader>
               <AjustarForm insumo={modal.insumo} onDone={cerrar} />
+            </>
+          )}
+          {modal?.tipo === 'ofrecerProducto' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>¿Vender esta bebida? 🥤</DialogTitle>
+              </DialogHeader>
+              <OfrecerProductoForm insumoId={modal.insumoId} nombre={modal.nombre} onDone={cerrar} />
             </>
           )}
         </DialogContent>
@@ -216,13 +237,13 @@ function InsumoForm({
 }: {
   insumo?: InsumoConAlerta;
   defaultTipo?: string;
-  onDone: () => void;
+  onDone: (result?: InsumoState) => void;
 }) {
   const action = insumo ? actualizarInsumo.bind(null, insumo.id) : crearInsumo;
   const [state, formAction, pending] = useActionState<InsumoState, FormData>(action, {});
   const [unidad, setUnidad] = useState(insumo?.unidad ?? 'unidad');
   useEffect(() => {
-    if (state.ok) onDone();
+    if (state.ok) onDone(state);
   }, [state.ok, onDone]);
 
   return (
@@ -359,5 +380,77 @@ function AjustarForm({ insumo, onDone }: { insumo: InsumoConAlerta; onDone: () =
         {pending ? 'Ajustando…' : 'Guardar ajuste'}
       </Button>
     </form>
+  );
+}
+
+function OfrecerProductoForm({
+  insumoId,
+  nombre,
+  onDone,
+}: {
+  insumoId: string;
+  nombre: string;
+  onDone: () => void;
+}) {
+  const [precio, setPrecio] = useState('');
+  const [pending, startTransition] = useTransition();
+
+  function crear() {
+    const p = Number(precio);
+    if (!Number.isFinite(p) || p <= 0) {
+      toast('Ingresa el precio de venta');
+      return;
+    }
+    startTransition(async () => {
+      const res = await crearProductoDesdeBebida(insumoId, p);
+      if (res.ok) {
+        toast.success(`"${nombre}" ya se puede vender en el POS 🥤`);
+        onDone();
+      } else {
+        toast('No se pudo crear', { description: res.error });
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 rounded-2xl bg-secondary/50 p-3">
+        <CupSoda className="h-5 w-5 shrink-0 text-[var(--utilidad)]" />
+        <p className="text-sm text-muted-foreground">
+          Detectamos que agregaste una nueva bebida al inventario.{' '}
+          <strong className="text-foreground">¿Deseas crear este producto para venderlo?</strong>{' '}
+          Se creará en la categoría <strong>Bebidas</strong> y compartirá el mismo stock del
+          inventario.
+        </p>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="precio_bebida">¿A cuánto la vendes?</Label>
+        <Input
+          id="precio_bebida"
+          type="number"
+          step="100"
+          min="0"
+          value={precio}
+          onChange={(e) => setPrecio(e.target.value)}
+          placeholder="Precio de venta"
+          autoFocus
+          className="rounded-xl h-11 tabular-nums"
+        />
+      </div>
+      <div className="flex flex-col gap-2">
+        <Button onClick={crear} disabled={pending} className="w-full rounded-2xl h-11 gap-2">
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CupSoda className="h-4 w-4" />}
+          Sí, crear producto
+        </Button>
+        <button
+          type="button"
+          onClick={onDone}
+          disabled={pending}
+          className="w-full rounded-2xl p-2 text-sm text-muted-foreground hover:text-foreground"
+        >
+          No por ahora
+        </button>
+      </div>
+    </div>
   );
 }

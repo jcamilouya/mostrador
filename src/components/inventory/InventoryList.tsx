@@ -211,8 +211,11 @@ function ProductTable({ productos, recetas }: { productos: Producto[]; recetas: 
                 </td>
                 <td className="px-4 py-3">
                   {info && info.disponibles !== null ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium">
-                      🍽️ Alcanza: {info.disponibles}
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium"
+                      title="Disponible para preparar según el inventario de ingredientes"
+                    >
+                      🍽️ Prepara: {info.disponibles}
                     </span>
                   ) : (
                     <StockBadge actual={p.stock_actual} minimo={p.stock_minimo} />
@@ -258,7 +261,7 @@ function ProductGrid({ productos, recetas }: { productos: Producto[]; recetas: R
           <div className="mt-2">
             {info && info.disponibles !== null ? (
               <span className="text-xs font-medium text-muted-foreground">
-                🍽️ Alcanza: {info.disponibles}
+                🍽️ Disponible para preparar: {info.disponibles}
               </span>
             ) : (
               <StockBadge actual={p.stock_actual} minimo={p.stock_minimo} />

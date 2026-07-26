@@ -86,6 +86,97 @@ async function movInsumo(
   });
 }
 
+async function movProducto(
+  admin: Admin,
+  empresaId: string,
+  productoId: string,
+  tipo: 'salida' | 'entrada',
+  cantidad: number,
+  ventaId: string,
+  referenciaTipo: string,
+  notas: string,
+): Promise<void> {
+  await admin.from('movimientos_inventario').insert({
+    empresa_id: empresaId,
+    producto_id: productoId,
+    tipo,
+    cantidad,
+    referencia_tipo: referenciaTipo,
+    referencia_id: ventaId,
+    notas,
+  });
+}
+
+/** Mapa producto_id → insumo_id (el link de bebida con stock único), o null. */
+async function mapaProductoInsumo(
+  admin: Admin,
+  empresaId: string,
+  items: ItemVendido[],
+): Promise<Map<string, string | null>> {
+  const ids = [...new Set(items.map((i) => i.producto_id))];
+  const map = new Map<string, string | null>();
+  if (ids.length === 0) return map;
+  // Si la columna insumo_id aún no existe (migración 012 sin correr), la query
+  // falla y el mapa queda vacío → todo se trata como producto normal.
+  const { data } = await admin
+    .from('productos')
+    .select('id, insumo_id')
+    .eq('empresa_id', empresaId)
+    .in('id', ids);
+  for (const p of data ?? []) {
+    map.set(p.id as string, ((p as Record<string, unknown>).insumo_id as string) ?? null);
+  }
+  return map;
+}
+
+/**
+ * Descuenta el stock de los PRODUCTOS de una venta. Si el producto está
+ * vinculado a un insumo (bebida con stock único), descuenta el insumo; si no,
+ * descuenta el stock propio del producto. Fuente de verdad: el Inventario.
+ */
+export async function descontarStockProductosPorVenta(
+  admin: Admin,
+  empresaId: string,
+  ventaId: string,
+  numeroVenta: number | string,
+  items: ItemVendido[],
+): Promise<void> {
+  const linkMap = await mapaProductoInsumo(admin, empresaId, items);
+  for (const it of items) {
+    if (!it.producto_id || it.cantidad <= 0) continue;
+    const insumoId = linkMap.get(it.producto_id);
+    if (insumoId) {
+      await ajustarStockInsumo(admin, empresaId, insumoId, -it.cantidad);
+      await movInsumo(admin, empresaId, insumoId, 'salida', it.cantidad, ventaId, `Venta #${numeroVenta}`);
+    } else {
+      await ajustarStockProducto(admin, empresaId, it.producto_id, -it.cantidad);
+      await movProducto(admin, empresaId, it.producto_id, 'salida', it.cantidad, ventaId, 'venta', `Venta #${numeroVenta}`);
+    }
+  }
+}
+
+/** Devuelve el stock de los productos de una venta anulada (consciente del link). */
+export async function devolverStockProductosPorVenta(
+  admin: Admin,
+  empresaId: string,
+  ventaId: string,
+  numeroVenta: number | string,
+  items: ItemVendido[],
+): Promise<void> {
+  const linkMap = await mapaProductoInsumo(admin, empresaId, items);
+  for (const it of items) {
+    if (!it.producto_id || it.cantidad <= 0) continue;
+    const insumoId = linkMap.get(it.producto_id);
+    if (insumoId) {
+      await ajustarStockInsumo(admin, empresaId, insumoId, it.cantidad);
+      await movInsumo(admin, empresaId, insumoId, 'entrada', it.cantidad, ventaId, `Venta #${numeroVenta} anulada`);
+    } else {
+      await ajustarStockProducto(admin, empresaId, it.producto_id, it.cantidad);
+      await movProducto(admin, empresaId, it.producto_id, 'entrada', it.cantidad, ventaId, 'anulacion', `Anulación venta #${numeroVenta} (stock restaurado)`);
+    }
+  }
+}
+
 /** Suma el consumo de insumos de una lista de items vendidos (insumo_id → cantidad). */
 async function calcularConsumo(
   admin: Admin,

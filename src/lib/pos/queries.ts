@@ -35,14 +35,24 @@ export async function getProductosPOS(empresaId: string): Promise<ProductoPOS[]>
     .eq('activo', true)
     .order('nombre');
   if (!data) return [];
+
+  // Productos vinculados a una bebida del Inventario → stock = stock del insumo.
+  const linkIds = data.map((p) => p.insumo_id).filter(Boolean) as string[];
+  const stockInsumo = new Map<string, number>();
+  if (linkIds.length > 0) {
+    const { data: ins } = await supabase.from('insumos').select('id, stock_actual').in('id', linkIds);
+    for (const i of ins ?? []) stockInsumo.set(i.id as string, Number(i.stock_actual) || 0);
+  }
+
   return data.map((p) => {
     const cat = Array.isArray(p.categorias) ? p.categorias[0] ?? null : p.categorias;
+    const linked = p.insumo_id ? stockInsumo.get(p.insumo_id) : undefined;
     return {
       id: p.id,
       nombre: p.nombre,
       precio_venta: Number(p.precio_venta),
       precio_compra: Number(p.precio_compra),
-      stock_actual: p.stock_actual,
+      stock_actual: linked !== undefined ? Math.floor(linked) : p.stock_actual,
       imagen_url: p.imagen_url ?? null,
       categoria_id: p.categoria_id,
       categoria_nombre: (cat as { nombre?: string } | null)?.nombre ?? null,

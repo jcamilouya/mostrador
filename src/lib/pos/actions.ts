@@ -8,7 +8,7 @@ import { getPlanInfo } from '@/lib/plan/queries';
 import {
   descontarIngredientesPorVenta,
   descontarInsumosVendidos,
-  ajustarStockProducto,
+  descontarStockProductosPorVenta,
 } from '@/lib/insumos/consumo';
 import { normalizarVariantes } from '@/lib/inventario/queries';
 import type { VentaResult } from './types';
@@ -179,18 +179,14 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
 
   // Descontar stock + registrar movimiento, solo si la venta queda completada
   if (!pendiente) {
-    for (const i of items) {
-      await ajustarStockProducto(admin, empresaId, i.producto_id, -i.cantidad);
-      await admin.from('movimientos_inventario').insert({
-        empresa_id: empresaId,
-        producto_id: i.producto_id,
-        tipo: 'salida',
-        cantidad: i.cantidad,
-        referencia_tipo: 'venta',
-        referencia_id: venta.id,
-        notas: `Venta #${venta.numero_venta}`,
-      });
-    }
+    // Descontar el stock de los productos (si es bebida vinculada, del insumo).
+    await descontarStockProductosPorVenta(
+      admin,
+      empresaId,
+      venta.id,
+      venta.numero_venta,
+      items.map((i) => ({ producto_id: i.producto_id, cantidad: i.cantidad })),
+    );
 
     // Descontar los ingredientes que consumió la venta (según recetas).
     await descontarIngredientesPorVenta(

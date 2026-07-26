@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import {
   descontarIngredientesPorVenta,
   descontarInsumosVendidos,
-  ajustarStockProducto,
+  descontarStockProductosPorVenta,
 } from '@/lib/insumos/consumo';
 
 /**
@@ -96,19 +96,15 @@ export async function POST(req: Request) {
     .select('producto_id, cantidad')
     .eq('venta_id', venta.id);
 
-  for (const item of items ?? []) {
-    if (!item.producto_id) continue;
-    await ajustarStockProducto(admin, venta.empresa_id, item.producto_id, -item.cantidad);
-    await admin.from('movimientos_inventario').insert({
-      empresa_id: venta.empresa_id,
-      producto_id: item.producto_id,
-      tipo: 'salida',
-      cantidad: item.cantidad,
-      referencia_tipo: 'venta',
-      referencia_id: venta.id,
-      notas: `Venta confirmada por Bancolombia QR (${transaccionId})`,
-    });
-  }
+  await descontarStockProductosPorVenta(
+    admin,
+    venta.empresa_id,
+    venta.id,
+    venta.numero_venta ?? transaccionId,
+    (items ?? [])
+      .filter((item) => item.producto_id)
+      .map((item) => ({ producto_id: item.producto_id as string, cantidad: item.cantidad })),
+  );
 
   // Descontar ingredientes de la venta confirmada (según recetas).
   await descontarIngredientesPorVenta(
