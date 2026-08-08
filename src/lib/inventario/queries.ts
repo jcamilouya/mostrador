@@ -67,7 +67,11 @@ export async function getProductos(empresaId: string): Promise<Producto[]> {
   const linkIds = data.map((p) => p.insumo_id).filter(Boolean) as string[];
   const stockInsumo = new Map<string, number>();
   if (linkIds.length > 0) {
-    const { data: ins } = await supabase.from('insumos').select('id, stock_actual').in('id', linkIds);
+    const { data: ins } = await supabase
+      .from('insumos')
+      .select('id, stock_actual')
+      .eq('empresa_id', empresaId)
+      .in('id', linkIds);
     for (const i of ins ?? []) stockInsumo.set(i.id as string, Number(i.stock_actual) || 0);
   }
 

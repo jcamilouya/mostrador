@@ -154,5 +154,8 @@ export async function confirmarVentaBreb(ventaId: string): Promise<ConfirmarResu
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/pos');
   revalidatePath('/dashboard/inventario');
+  // La venta también descuenta ingredientes y bebidas del Inventario.
+  revalidatePath('/dashboard/insumos');
+  revalidatePath('/dashboard/ingresos');
   return { ok: true };
 }

@@ -62,6 +62,76 @@ export async function contarInsumosBajos(empresaId: string): Promise<number> {
   return insumos.filter((i) => i.bajo).length;
 }
 
+/** Normaliza un nombre para comparar (sin tildes, sin mayúsculas, sin dobles espacios). */
+function claveNombre(nombre: string): string {
+  return nombre
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export type VinculoBebida = {
+  /** Producto del POS ya conectado a este insumo (stock único). */
+  conectado: { id: string; nombre: string } | null;
+  /** Producto del POS con el mismo nombre pero SIN conectar (stock duplicado). */
+  sugerido: { id: string; nombre: string; stock: number } | null;
+};
+
+/**
+ * Para cada insumo: si ya tiene un producto del POS conectado (`productos.insumo_id`)
+ * o si existe uno con el mismo nombre sin conectar. Ese segundo caso es el que
+ * hace que vender no descuente el Inventario: son dos stocks separados del mismo
+ * artículo. Devuelve `{}` si aún no existe la columna (migración 012 sin correr).
+ */
+export async function getVinculosBebidas(
+  empresaId: string,
+): Promise<Record<string, VinculoBebida>> {
+  const supabase = await createClient();
+  const { data: productos, error } = await supabase
+    .from('productos')
+    .select('id, nombre, stock_actual, insumo_id, activo')
+    .eq('empresa_id', empresaId);
+  if (error || !productos) return {};
+
+  const { data: insumos } = await supabase
+    .from('insumos')
+    .select('id, nombre')
+    .eq('empresa_id', empresaId)
+    .eq('activo', true);
+
+  // Productos sin conectar, indexados por nombre normalizado.
+  const porNombre = new Map<string, { id: string; nombre: string; stock: number }>();
+  const conectadoPorInsumo = new Map<string, { id: string; nombre: string }>();
+  for (const p of productos) {
+    const insumoId = (p as Record<string, unknown>).insumo_id as string | null;
+    if (insumoId) {
+      conectadoPorInsumo.set(insumoId, { id: p.id as string, nombre: p.nombre as string });
+    } else if (p.activo !== false) {
+      const k = claveNombre(p.nombre as string);
+      if (!porNombre.has(k)) {
+        porNombre.set(k, {
+          id: p.id as string,
+          nombre: p.nombre as string,
+          stock: Number(p.stock_actual) || 0,
+        });
+      }
+    }
+  }
+
+  const map: Record<string, VinculoBebida> = {};
+  for (const i of insumos ?? []) {
+    const id = i.id as string;
+    const conectado = conectadoPorInsumo.get(id) ?? null;
+    map[id] = {
+      conectado,
+      sugerido: conectado ? null : porNombre.get(claveNombre(i.nombre as string)) ?? null,
+    };
+  }
+  return map;
+}
+
 export type RecetaItem = {
   insumo_id: string;
   nombre: string;

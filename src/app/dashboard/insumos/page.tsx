@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
-import { getInsumos } from '@/lib/insumos/queries';
+import { getInsumos, getVinculosBebidas } from '@/lib/insumos/queries';
 import { InsumosManager } from '@/components/insumos/InsumosManager';
 
 export const metadata: Metadata = {
@@ -12,7 +12,10 @@ export default async function InsumosPage() {
   const empresaId = await getEmpresaIdDelUsuario();
   if (!empresaId) redirect('/onboarding');
 
-  const insumos = await getInsumos(empresaId);
+  const [insumos, vinculos] = await Promise.all([
+    getInsumos(empresaId),
+    getVinculosBebidas(empresaId),
+  ]);
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
@@ -24,7 +27,7 @@ export default async function InsumosPage() {
         </p>
       </header>
 
-      <InsumosManager insumos={insumos} />
+      <InsumosManager insumos={insumos} vinculos={vinculos} />
     </div>
   );
 }

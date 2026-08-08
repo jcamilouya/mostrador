@@ -233,6 +233,8 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/pos');
   revalidatePath('/dashboard/inventario');
+  // La venta también descuenta ingredientes y bebidas del Inventario.
+  revalidatePath('/dashboard/insumos');
   revalidatePath('/dashboard/clientes');
 
   return {

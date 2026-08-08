@@ -161,6 +161,18 @@ export async function actualizarProducto(
   }
 
   const admin = createAdminClient();
+
+  // Si el producto está conectado a un ítem del Inventario, su stock lo manda
+  // ese ítem: el formulario ni siquiera muestra los campos, así que no hay que
+  // sobrescribirlos (los pondría en 0).
+  const { data: actual } = await admin
+    .from('productos')
+    .select('insumo_id')
+    .eq('id', id)
+    .eq('empresa_id', session.empresaId)
+    .maybeSingle();
+  const vinculado = Boolean((actual as Record<string, unknown> | null)?.insumo_id);
+
   const updatePayload: Record<string, unknown> = {
     nombre: parsed.data.nombre,
     descripcion: parsed.data.descripcion || null,
@@ -169,13 +181,15 @@ export async function actualizarProducto(
     categoria_id: parsed.data.categoria_id || null,
     precio_compra: parsed.data.precio_compra,
     precio_venta: parsed.data.precio_venta,
-    stock_actual: parsed.data.stock_actual,
-    stock_minimo: parsed.data.stock_minimo,
     activo: parsed.data.activo !== false && parsed.data.activo !== 'off',
     variantes: parsed.data.variantes,
     pide_bebida: parsed.data.pide_bebida,
     updated_at: new Date().toISOString(),
   };
+  if (!vinculado) {
+    updatePayload.stock_actual = parsed.data.stock_actual;
+    updatePayload.stock_minimo = parsed.data.stock_minimo;
+  }
   if (imagen_url !== undefined) updatePayload.imagen_url = imagen_url;
 
   const { error } = await admin

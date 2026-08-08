@@ -194,8 +194,14 @@ async function calcularConsumo(
     .in('producto_id', productoIds);
   if (!recetas || recetas.length === 0) return consumo;
 
+  // Si el producto está conectado a un insumo (stock único), ese insumo ya se
+  // descontó como stock del producto: no volverlo a descontar por la receta.
+  const linkMap = await mapaProductoInsumo(admin, empresaId, items);
+
   for (const item of items) {
+    const propio = linkMap.get(item.producto_id);
     for (const linea of recetas.filter((r) => r.producto_id === item.producto_id)) {
+      if (propio && linea.insumo_id === propio) continue;
       const necesita = (Number(linea.cantidad) || 0) * item.cantidad;
       consumo.set(linea.insumo_id, (consumo.get(linea.insumo_id) ?? 0) + necesita);
     }

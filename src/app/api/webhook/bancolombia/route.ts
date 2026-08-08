@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   descontarIngredientesPorVenta,
@@ -133,6 +134,14 @@ export async function POST(req: Request) {
       cantidad: it.cantidad,
     })),
   );
+
+  // Refrescar las pantallas que muestran stock/ventas (la venta se confirmó
+  // por fuera de la app, así que nadie más las invalida).
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/pos');
+  revalidatePath('/dashboard/inventario');
+  revalidatePath('/dashboard/insumos');
+  revalidatePath('/dashboard/ingresos');
 
   return NextResponse.json({ ok: true });
 }

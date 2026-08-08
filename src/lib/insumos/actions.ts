@@ -13,6 +13,14 @@ export type InsumoState = {
   insumoId?: string;
   nombre?: string;
   sugerirProducto?: boolean;
+  /** Stock con el que quedó el ítem recién creado. */
+  stockInsumo?: number;
+  /**
+   * Ya existe un producto del POS con ese nombre: hay que CONECTARLOS, si no
+   * quedan dos stocks separados del mismo artículo (vender no descontaría el
+   * Inventario).
+   */
+  productoExistente?: { id: string; nombre: string; stock: number };
 };
 
 async function requireEmpresaId(): Promise<string | null> {
@@ -27,8 +35,15 @@ async function requireEmpresaId(): Promise<string | null> {
   return data?.empresa_id ?? null;
 }
 
+/**
+ * Refresca TODAS las pantallas que muestran stock. Las bebidas conectadas
+ * comparten stock con su producto del POS, así que un cambio en el Inventario
+ * también cambia lo que ven el POS y la lista de productos.
+ */
 function refrescar() {
   revalidatePath('/dashboard/insumos');
+  revalidatePath('/dashboard/inventario');
+  revalidatePath('/dashboard/pos');
   revalidatePath('/dashboard');
 }
 
@@ -74,20 +89,167 @@ export async function crearInsumo(_prev: InsumoState, formData: FormData): Promi
     });
   }
 
-  // Si es bebida y no existe ya un producto con ese nombre, sugerir venderla.
+  // Si es bebida: o se ofrece crear el producto para venderla, o —si ya existe
+  // un producto con ese nombre— se ofrece CONECTARLOS para que compartan stock.
   let sugerirProducto = false;
+  let productoExistente: InsumoState['productoExistente'];
   if (d.tipo === 'bebidas') {
     const { data: existente } = await admin
       .from('productos')
-      .select('id')
+      .select('id, nombre, stock_actual')
       .eq('empresa_id', empresaId)
+      .is('insumo_id', null)
       .ilike('nombre', d.nombre)
       .limit(1);
-    sugerirProducto = !existente || existente.length === 0;
+    if (existente && existente.length > 0) {
+      productoExistente = {
+        id: existente[0].id as string,
+        nombre: existente[0].nombre as string,
+        stock: Number(existente[0].stock_actual) || 0,
+      };
+    } else {
+      sugerirProducto = true;
+    }
   }
 
   refrescar();
-  return { ok: true, insumoId: insumo.id, nombre: d.nombre, sugerirProducto };
+  return {
+    ok: true,
+    insumoId: insumo.id,
+    nombre: d.nombre,
+    stockInsumo: d.stock_actual,
+    sugerirProducto,
+    productoExistente,
+  };
+}
+
+/**
+ * Conecta un PRODUCTO del POS con un INSUMO del Inventario: a partir de aquí
+ * comparten UN SOLO stock (fuente de verdad: el insumo). Arregla el caso de
+ * tener el mismo artículo duplicado en las dos pantallas, donde vender bajaba
+ * un stock y el otro se quedaba igual.
+ */
+export async function vincularProductoConInsumo(
+  insumoId: string,
+  productoId: string,
+  stockReal: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const empresaId = await requireEmpresaId();
+  if (!empresaId) return { ok: false, error: 'No autenticado' };
+  const stock = Number(stockReal);
+  if (!Number.isFinite(stock) || stock < 0) {
+    return { ok: false, error: 'Escribe cuántas unidades tienes de verdad' };
+  }
+
+  const admin = createAdminClient();
+
+  const { data: insumo } = await admin
+    .from('insumos')
+    .select('id, nombre, stock_actual')
+    .eq('id', insumoId)
+    .eq('empresa_id', empresaId)
+    .maybeSingle();
+  if (!insumo) return { ok: false, error: 'No encontramos ese ítem del inventario' };
+
+  const { data: producto, error: prodErr } = await admin
+    .from('productos')
+    .select('id, insumo_id')
+    .eq('id', productoId)
+    .eq('empresa_id', empresaId)
+    .maybeSingle();
+  if (prodErr) {
+    return { ok: false, error: 'Falta correr la migración 012 en Supabase.' };
+  }
+  if (!producto) return { ok: false, error: 'No encontramos ese producto' };
+  const yaVinculadoA = (producto as Record<string, unknown>).insumo_id as string | null;
+  if (yaVinculadoA && yaVinculadoA !== insumoId) {
+    return { ok: false, error: 'Ese producto ya está conectado con otro ítem del inventario.' };
+  }
+
+  // Un insumo solo puede tener un producto conectado (si no, se descontaría dos veces).
+  const { data: otro } = await admin
+    .from('productos')
+    .select('id')
+    .eq('empresa_id', empresaId)
+    .eq('insumo_id', insumoId)
+    .neq('id', productoId)
+    .limit(1);
+  if (otro && otro.length > 0) {
+    return { ok: false, error: 'Este ítem ya está conectado con otro producto del POS.' };
+  }
+
+  const { error: linkErr } = await admin
+    .from('productos')
+    .update({
+      insumo_id: insumoId,
+      // Se mantiene igual al insumo por si algún día se desconectan.
+      stock_actual: Math.floor(stock),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', productoId)
+    .eq('empresa_id', empresaId);
+  if (linkErr) {
+    return { ok: false, error: 'No pudimos conectarlos. ¿Corriste la migración 012?' };
+  }
+
+  // El stock que dijo el dueño manda: queda como stock único del insumo.
+  const anterior = Number(insumo.stock_actual) || 0;
+  if (anterior !== stock) {
+    await admin
+      .from('insumos')
+      .update({ stock_actual: stock, updated_at: new Date().toISOString() })
+      .eq('id', insumoId)
+      .eq('empresa_id', empresaId);
+    await admin.from('movimientos_insumos').insert({
+      empresa_id: empresaId,
+      insumo_id: insumoId,
+      tipo: 'ajuste',
+      cantidad: Math.abs(stock - anterior),
+      referencia_tipo: 'ajuste',
+      notas: 'Ajuste al conectar con el producto del POS (stock único)',
+    });
+  }
+
+  refrescar();
+  return { ok: true };
+}
+
+/** Desconecta un producto de su insumo: cada uno vuelve a llevar su propio stock. */
+export async function desvincularProducto(
+  productoId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const empresaId = await requireEmpresaId();
+  if (!empresaId) return { ok: false, error: 'No autenticado' };
+
+  const admin = createAdminClient();
+  const { data: producto, error } = await admin
+    .from('productos')
+    .select('id, insumo_id')
+    .eq('id', productoId)
+    .eq('empresa_id', empresaId)
+    .maybeSingle();
+  if (error || !producto) return { ok: false, error: 'No encontramos ese producto' };
+
+  const insumoId = (producto as Record<string, unknown>).insumo_id as string | null;
+  let stock = 0;
+  if (insumoId) {
+    const { data: insumo } = await admin
+      .from('insumos')
+      .select('stock_actual')
+      .eq('id', insumoId)
+      .eq('empresa_id', empresaId)
+      .maybeSingle();
+    stock = Math.floor(Number(insumo?.stock_actual) || 0);
+  }
+
+  await admin
+    .from('productos')
+    .update({ insumo_id: null, stock_actual: stock, updated_at: new Date().toISOString() })
+    .eq('id', productoId)
+    .eq('empresa_id', empresaId);
+
+  refrescar();
+  return { ok: true };
 }
 
 /**
@@ -113,6 +275,18 @@ export async function crearProductoDesdeBebida(
     .eq('empresa_id', empresaId)
     .single();
   if (!insumo) return { ok: false, error: 'Bebida no encontrada' };
+
+  // Si ya se creó el producto para esta bebida, no duplicarlo (dos productos
+  // conectados al mismo insumo descontarían stock dos veces).
+  const { data: yaCreado } = await admin
+    .from('productos')
+    .select('id')
+    .eq('empresa_id', empresaId)
+    .eq('insumo_id', insumoId)
+    .limit(1);
+  if (yaCreado && yaCreado.length > 0) {
+    return { ok: true };
+  }
 
   // Categoría "Bebidas" (crear si no existe).
   let categoriaId: string | null = null;
@@ -150,9 +324,7 @@ export async function crearProductoDesdeBebida(
     return { ok: false, error: 'No se pudo crear el producto. ¿Corriste la migración 012?' };
   }
 
-  revalidatePath('/dashboard/inventario');
-  revalidatePath('/dashboard/pos');
-  revalidatePath('/dashboard');
+  refrescar();
   return { ok: true };
 }
 

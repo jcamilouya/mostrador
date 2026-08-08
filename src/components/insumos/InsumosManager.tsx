@@ -12,7 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, PackagePlus, SlidersHorizontal, Trash2, AlertTriangle, CupSoda, Loader2 } from 'lucide-react';
+import { Plus, Pencil, PackagePlus, SlidersHorizontal, Trash2, AlertTriangle, CupSoda, Loader2, Link2 } from 'lucide-react';
 import {
   crearInsumo,
   actualizarInsumo,
@@ -20,12 +20,16 @@ import {
   ajustarStock,
   archivarInsumo,
   crearProductoDesdeBebida,
+  vincularProductoConInsumo,
+  desvincularProducto,
   type InsumoState,
 } from '@/lib/insumos/actions';
 import { UNIDADES, unidadesCompatibles, unidadCorta, formatCantidad } from '@/lib/insumos/units';
 import { MODULOS, getModulo } from '@/lib/insumos/modulos';
-import type { InsumoConAlerta } from '@/lib/insumos/queries';
+import type { InsumoConAlerta, VinculoBebida } from '@/lib/insumos/queries';
 import { formatCOP } from '@/lib/utils/format';
+
+type ProductoDup = { id: string; nombre: string; stock: number };
 
 type Modal =
   | { tipo: 'crear' }
@@ -33,9 +37,23 @@ type Modal =
   | { tipo: 'agregar'; insumo: InsumoConAlerta }
   | { tipo: 'ajustar'; insumo: InsumoConAlerta }
   | { tipo: 'ofrecerProducto'; insumoId: string; nombre: string }
+  | {
+      tipo: 'conectar';
+      insumoId: string;
+      nombre: string;
+      unidad: string;
+      stockInsumo: number;
+      producto: ProductoDup;
+    }
   | null;
 
-export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
+export function InsumosManager({
+  insumos,
+  vinculos = {},
+}: {
+  insumos: InsumoConAlerta[];
+  vinculos?: Record<string, VinculoBebida>;
+}) {
   const router = useRouter();
   const [modal, setModal] = useState<Modal>(null);
   const [modulo, setModulo] = useState<string>('materia_prima');
@@ -50,6 +68,10 @@ export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
   );
   const bajos = insumos.filter((i) => i.bajo).length;
   const modDef = getModulo(modulo);
+
+  // Ítems que además existen como producto del POS SIN conectar: son dos stocks
+  // del mismo artículo, y vender solo mueve el del producto.
+  const sinConectar = insumos.filter((i) => vinculos[i.id]?.sugerido);
 
   return (
     <div className="space-y-4">
@@ -87,6 +109,24 @@ export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
         </p>
       )}
 
+      {sinConectar.length > 0 && (
+        <div className="flex items-start gap-2.5 rounded-2xl border border-[var(--egreso)]/30 bg-[var(--egreso)]/5 p-3.5">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--egreso)]" />
+          <p className="text-sm">
+            <strong>
+              {sinConectar.length} ítem{sinConectar.length === 1 ? '' : 's'} está
+              {sinConectar.length === 1 ? '' : 'n'} duplicado
+              {sinConectar.length === 1 ? '' : 's'}
+            </strong>{' '}
+            — también existe{sinConectar.length === 1 ? '' : 'n'} como producto en el POS con un
+            stock aparte, así que al vender este inventario no baja.{' '}
+            <span className="text-muted-foreground">
+              Busca el aviso rojo en la lista y toca <strong>Conectar</strong>.
+            </span>
+          </p>
+        </div>
+      )}
+
       {delModulo.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-3xl bg-card p-10 text-center shadow-sm">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary">
@@ -100,8 +140,11 @@ export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
       ) : (
         <div className="overflow-hidden rounded-3xl bg-card shadow-sm">
           <ul className="divide-y divide-border">
-            {delModulo.map((i) => (
-              <li key={i.id} className="flex flex-wrap items-center gap-3 p-4">
+            {delModulo.map((i) => {
+              const vinculo = vinculos[i.id];
+              return (
+              <li key={i.id} className="p-4">
+                <div className="flex flex-wrap items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{i.nombre}</p>
                   <p className="text-xs text-muted-foreground">
@@ -140,8 +183,63 @@ export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
                     <Trash2 className="h-4 w-4 text-[var(--egreso)]" />
                   </IconBtn>
                 </div>
+                </div>
+
+                {/* Mismo artículo duplicado: existe también como producto del POS */}
+                {vinculo?.sugerido && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-[var(--egreso)]/10 p-3">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--egreso)]" />
+                    <p className="min-w-0 flex-1 text-xs">
+                      También está en el POS como producto con{' '}
+                      <strong>{vinculo.sugerido.stock}</strong> por aparte. Al vender baja ese y este
+                      no. <strong>Conéctalos</strong> para llevar un solo stock.
+                    </p>
+                    <Button
+                      size="sm"
+                      className="rounded-xl gap-1.5"
+                      onClick={() =>
+                        setModal({
+                          tipo: 'conectar',
+                          insumoId: i.id,
+                          nombre: i.nombre,
+                          unidad: i.unidad,
+                          stockInsumo: i.stock_actual,
+                          producto: vinculo.sugerido!,
+                        })
+                      }
+                    >
+                      <Link2 className="h-3.5 w-3.5" /> Conectar
+                    </Button>
+                  </div>
+                )}
+
+                {vinculo?.conectado && (
+                  <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <Link2 className="h-3 w-3" /> Un solo stock con el producto “
+                      {vinculo.conectado.nombre}” del POS
+                    </span>
+                    <button
+                      type="button"
+                      className="underline hover:text-foreground"
+                      onClick={async () => {
+                        if (
+                          confirm(
+                            `¿Separar "${i.nombre}" del producto del POS? Cada uno volverá a llevar su propio stock.`,
+                          )
+                        ) {
+                          await desvincularProducto(vinculo.conectado!.id);
+                          router.refresh();
+                        }
+                      }}
+                    >
+                      Separar
+                    </button>
+                  </p>
+                )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </div>
       )}
@@ -157,7 +255,17 @@ export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
                 defaultTipo={modulo}
                 onDone={(res) => {
                   router.refresh();
-                  if (res?.sugerirProducto && res.insumoId) {
+                  if (res?.productoExistente && res.insumoId) {
+                    // Ya existe como producto del POS → conectarlos (un solo stock).
+                    setModal({
+                      tipo: 'conectar',
+                      insumoId: res.insumoId,
+                      nombre: res.nombre ?? '',
+                      unidad: 'unidad',
+                      stockInsumo: res.stockInsumo ?? 0,
+                      producto: res.productoExistente,
+                    });
+                  } else if (res?.sugerirProducto && res.insumoId) {
                     setModal({ tipo: 'ofrecerProducto', insumoId: res.insumoId, nombre: res.nombre ?? '' });
                   } else {
                     setModal(null);
@@ -196,6 +304,21 @@ export function InsumosManager({ insumos }: { insumos: InsumoConAlerta[] }) {
                 <DialogTitle>¿Vender esta bebida? 🥤</DialogTitle>
               </DialogHeader>
               <OfrecerProductoForm insumoId={modal.insumoId} nombre={modal.nombre} onDone={cerrar} />
+            </>
+          )}
+          {modal?.tipo === 'conectar' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Un solo stock para “{modal.nombre}” 🔗</DialogTitle>
+              </DialogHeader>
+              <ConectarForm
+                insumoId={modal.insumoId}
+                nombre={modal.nombre}
+                unidad={modal.unidad}
+                stockInsumo={modal.stockInsumo}
+                producto={modal.producto}
+                onDone={cerrar}
+              />
             </>
           )}
         </DialogContent>
@@ -380,6 +503,102 @@ function AjustarForm({ insumo, onDone }: { insumo: InsumoConAlerta; onDone: () =
         {pending ? 'Ajustando…' : 'Guardar ajuste'}
       </Button>
     </form>
+  );
+}
+
+function ConectarForm({
+  insumoId,
+  nombre,
+  unidad,
+  stockInsumo,
+  producto,
+  onDone,
+}: {
+  insumoId: string;
+  nombre: string;
+  unidad: string;
+  stockInsumo: number;
+  producto: ProductoDup;
+  onDone: () => void;
+}) {
+  // Por defecto el menor de los dos: es el más probable (el del POS ya bajó por
+  // las ventas) y nunca infla el inventario.
+  const [stock, setStock] = useState(String(Math.min(stockInsumo, producto.stock)));
+  const [pending, startTransition] = useTransition();
+
+  function conectar() {
+    const n = Number(stock);
+    if (!Number.isFinite(n) || n < 0) {
+      toast('Escribe cuántas tienes de verdad');
+      return;
+    }
+    startTransition(async () => {
+      const res = await vincularProductoConInsumo(insumoId, producto.id, n);
+      if (res.ok) {
+        toast.success(`"${nombre}" ahora lleva un solo stock 🔗`);
+        onDone();
+      } else {
+        toast('No se pudo conectar', { description: res.error });
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 rounded-2xl bg-secondary/50 p-3">
+        <Link2 className="h-5 w-5 shrink-0 text-[var(--utilidad)]" />
+        <p className="text-sm text-muted-foreground">
+          <strong className="text-foreground">“{nombre}” está en dos lados</strong> y cada uno lleva
+          su propia cuenta, por eso al vender solo baja uno. Si los conectas, el POS descontará
+          directo de tu inventario.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-center">
+        <div className="rounded-2xl bg-card p-3 shadow-sm">
+          <p className="text-[11px] text-muted-foreground">En Inventario</p>
+          <p className="text-lg font-semibold tabular-nums">
+            {formatCantidad(stockInsumo, unidad)}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-card p-3 shadow-sm">
+          <p className="text-[11px] text-muted-foreground">Producto del POS</p>
+          <p className="text-lg font-semibold tabular-nums">{producto.stock}</p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="stock_real">¿Cuántas tienes de verdad ahora?</Label>
+        <Input
+          id="stock_real"
+          type="number"
+          step="any"
+          min="0"
+          value={stock}
+          onChange={(e) => setStock(e.target.value)}
+          autoFocus
+          className="rounded-xl h-11 tabular-nums"
+        />
+        <p className="text-xs text-muted-foreground">
+          Este número queda como stock único de “{nombre}”.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Button onClick={conectar} disabled={pending} className="w-full rounded-2xl h-11 gap-2">
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+          Conectar y usar un solo stock
+        </Button>
+        <button
+          type="button"
+          onClick={onDone}
+          disabled={pending}
+          className="w-full rounded-2xl p-2 text-sm text-muted-foreground hover:text-foreground"
+        >
+          Ahora no
+        </button>
+      </div>
+    </div>
   );
 }
 
