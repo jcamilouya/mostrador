@@ -53,6 +53,66 @@ export async function getEmpresaIdDelUsuario(): Promise<string | null> {
   return data?.empresa_id ?? null;
 }
 
+export type ProductoStock = {
+  id: string;
+  nombre: string;
+  stock_actual: number;
+  stock_minimo: number;
+  precio_venta: number;
+};
+
+/**
+ * Productos activos con su stock EFECTIVO: si el producto está conectado a un
+ * ítem del Inventario (`insumo_id`), manda el stock del insumo — `productos.
+ * stock_actual` se queda congelado y mostraría un número viejo. Lo usan el
+ * dashboard (alerta de stock bajo) y la analítica.
+ */
+export async function getProductosConStock(empresaId: string): Promise<ProductoStock[]> {
+  const supabase = await createClient();
+  const campos = 'id, nombre, stock_actual, stock_minimo, precio_venta';
+  const conLink = await supabase
+    .from('productos')
+    .select(`${campos}, insumo_id`)
+    .eq('empresa_id', empresaId)
+    .eq('activo', true);
+  let filas = conLink.data as Record<string, unknown>[] | null;
+  // Sin la migración 012 la columna no existe: reintentar sin ella.
+  if (conLink.error) {
+    const sinLink = await supabase
+      .from('productos')
+      .select(campos)
+      .eq('empresa_id', empresaId)
+      .eq('activo', true);
+    filas = sinLink.data as Record<string, unknown>[] | null;
+  }
+  if (!filas) return [];
+
+  const linkIds = filas
+    .map((p) => p.insumo_id as string | null)
+    .filter(Boolean) as string[];
+  const stockInsumo = new Map<string, number>();
+  if (linkIds.length > 0) {
+    const { data: ins } = await supabase
+      .from('insumos')
+      .select('id, stock_actual')
+      .eq('empresa_id', empresaId)
+      .in('id', linkIds);
+    for (const i of ins ?? []) stockInsumo.set(i.id as string, Number(i.stock_actual) || 0);
+  }
+
+  return filas.map((p) => {
+    const insumoId = p.insumo_id as string | null;
+    const linked = insumoId ? stockInsumo.get(insumoId) : undefined;
+    return {
+      id: p.id as string,
+      nombre: p.nombre as string,
+      stock_actual: linked !== undefined ? Math.floor(linked) : Number(p.stock_actual) || 0,
+      stock_minimo: Number(p.stock_minimo) || 0,
+      precio_venta: Number(p.precio_venta) || 0,
+    };
+  });
+}
+
 export async function getProductos(empresaId: string): Promise<Producto[]> {
   const supabase = await createClient();
   const { data, error } = await supabase

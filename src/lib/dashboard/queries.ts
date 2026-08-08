@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { getProductosConStock } from '@/lib/inventario/queries';
 import { hoyBogota, inicioDiaBogotaISO, finDiaBogotaISO } from '@/lib/utils/fecha';
 
 export type DashboardStats = {
@@ -43,11 +44,8 @@ export async function getDashboardStats(empresaId: string): Promise<DashboardSta
       .eq('empresa_id', empresaId)
       .order('created_at', { ascending: false })
       .limit(5),
-    supabase
-      .from('productos')
-      .select('id, stock_actual, stock_minimo')
-      .eq('empresa_id', empresaId)
-      .eq('activo', true),
+    // Stock efectivo: las bebidas conectadas cuentan el stock del Inventario.
+    getProductosConStock(empresaId),
   ]);
 
   const ventas = ventasRes.data ?? [];
@@ -58,8 +56,7 @@ export async function getDashboardStats(empresaId: string): Promise<DashboardSta
   const egresosHoyTotal = egresos.reduce((acc, e) => acc + Number(e.monto), 0);
   const egresosHoyCount = egresos.length;
 
-  const productos = productosRes.data ?? [];
-  const productosStockBajo = productos.filter(
+  const productosStockBajo = productosRes.filter(
     (p) => p.stock_actual <= p.stock_minimo,
   ).length;
 

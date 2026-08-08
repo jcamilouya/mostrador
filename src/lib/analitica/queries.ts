@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { getProductosConStock } from '@/lib/inventario/queries';
 
 export type PuntoBalance = {
   fecha: string; // YYYY-MM-DD
@@ -158,11 +159,8 @@ export async function getAnaliticaData(
       .eq('ventas.empresa_id', empresaId)
       .eq('ventas.estado', 'completada')
       .gte('ventas.created_at', desdePeriodoISO),
-    supabase
-      .from('productos')
-      .select('id, nombre, stock_actual, precio_venta')
-      .eq('empresa_id', empresaId)
-      .eq('activo', true),
+    // Stock efectivo: las bebidas conectadas cuentan el stock del Inventario.
+    getProductosConStock(empresaId),
     supabase
       .from('ventas')
       .select('metodo_pago, total')
@@ -185,7 +183,7 @@ export async function getAnaliticaData(
       .lt('fecha', finComparativo.toISOString().slice(0, 10)),
   ]);
 
-  for (const r of [horasRes, itemsRes, productosRes, ventasMetodoRes, ventasMesRes, egresosMesRes]) {
+  for (const r of [horasRes, itemsRes, ventasMetodoRes, ventasMesRes, egresosMesRes]) {
     if (r.error) throw new Error(r.error.message);
   }
 
@@ -244,14 +242,13 @@ export async function getAnaliticaData(
     .slice(0, 10);
 
   // Productos sin movimiento en el período
-  const productos = (productosRes.data ?? []) as ProductoSinMovimiento[];
-  const sinMovimiento = productos
+  const sinMovimiento = productosRes
     .filter((p) => !vendidosIds.has(p.id))
     .map((p) => ({
       id: p.id,
       nombre: p.nombre,
-      stock_actual: Number(p.stock_actual) || 0,
-      precio_venta: Number(p.precio_venta) || 0,
+      stock_actual: p.stock_actual,
+      precio_venta: p.precio_venta,
     }))
     .sort((a, b) => b.stock_actual - a.stock_actual);
 
