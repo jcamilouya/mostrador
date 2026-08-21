@@ -210,13 +210,8 @@ function ProductTable({ productos, recetas }: { productos: Producto[]; recetas: 
                   {info && <span className="ml-1 text-[10px] text-muted-foreground">receta</span>}
                 </td>
                 <td className="px-4 py-3">
-                  {info && info.disponibles !== null ? (
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium"
-                      title="Disponible para preparar según el inventario de ingredientes"
-                    >
-                      🍽️ Prepara: {info.disponibles}
-                    </span>
+                  {info ? (
+                    <AvisoReceta info={info} />
                   ) : (
                     <StockBadge actual={p.stock_actual} minimo={p.stock_minimo} />
                   )}
@@ -227,6 +222,31 @@ function ProductTable({ productos, recetas }: { productos: Producto[]; recetas: 
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Estado de un producto que se prepara: o le falta algún ingrediente (y se dice
+ * cuál) o está listo. No mostramos "alcanza para N": lo que el dueño necesita
+ * saber es qué le falta comprar.
+ */
+function AvisoReceta({ info }: { info: ResumenReceta }) {
+  if (info.faltantes.length === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+        🍽️ Se prepara
+      </span>
+    );
+  }
+  const [primero, ...resto] = info.faltantes;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full bg-[var(--egreso)]/10 px-2.5 py-0.5 text-xs font-medium text-[var(--egreso)]"
+      title={`Sin existencias de: ${info.faltantes.map((f) => f.nombre).join(', ')}`}
+    >
+      ⚠️ Falta {primero.nombre}
+      {resto.length > 0 && ` +${resto.length}`}
+    </span>
   );
 }
 
@@ -259,10 +279,8 @@ function ProductGrid({ productos, recetas }: { productos: Producto[]; recetas: R
             {formatCOP(p.precio_venta)}
           </p>
           <div className="mt-2">
-            {info && info.disponibles !== null ? (
-              <span className="text-xs font-medium text-muted-foreground">
-                🍽️ Disponible para preparar: {info.disponibles}
-              </span>
+            {info ? (
+              <AvisoReceta info={info} />
             ) : (
               <StockBadge actual={p.stock_actual} minimo={p.stock_minimo} />
             )}

@@ -123,6 +123,98 @@ export async function crearInsumo(_prev: InsumoState, formData: FormData): Promi
   };
 }
 
+export type InsumoRapido = {
+  id: string;
+  nombre: string;
+  unidad: string;
+  costo_unitario: number;
+  stock_actual: number;
+};
+
+/**
+ * Crea un ingrediente SIN salir del formulario de producto. Si ya existe uno
+ * con ese nombre lo devuelve en vez de duplicarlo (dos fichas del mismo
+ * ingrediente parten el stock en dos y ninguna cuadra).
+ */
+export async function crearInsumoRapido(input: {
+  nombre: string;
+  unidad: string;
+  stock_actual?: number;
+  costo_unitario?: number;
+}): Promise<{ ok: boolean; error?: string; insumo?: InsumoRapido; yaExistia?: boolean }> {
+  const empresaId = await requireEmpresaId();
+  if (!empresaId) return { ok: false, error: 'No autenticado' };
+
+  const nombre = (input.nombre ?? '').trim();
+  if (nombre.length < 2) return { ok: false, error: 'Escribe el nombre del ingrediente' };
+  const unidad = UNIDAD_VALUES.includes(input.unidad) ? input.unidad : 'unidad';
+  const stock = Math.max(0, Number(input.stock_actual) || 0);
+  const costo = Math.max(0, Number(input.costo_unitario) || 0);
+
+  const admin = createAdminClient();
+
+  // ¿Ya existe? Devolverlo en vez de crear un duplicado.
+  const { data: existente } = await admin
+    .from('insumos')
+    .select('id, nombre, unidad, costo_unitario, stock_actual')
+    .eq('empresa_id', empresaId)
+    .eq('activo', true)
+    .ilike('nombre', nombre)
+    .limit(1);
+  if (existente && existente.length > 0) {
+    const e = existente[0];
+    return {
+      ok: true,
+      yaExistia: true,
+      insumo: {
+        id: e.id as string,
+        nombre: e.nombre as string,
+        unidad: (e.unidad as string) ?? 'unidad',
+        costo_unitario: Number(e.costo_unitario) || 0,
+        stock_actual: Number(e.stock_actual) || 0,
+      },
+    };
+  }
+
+  const { data: nuevo, error } = await admin
+    .from('insumos')
+    .insert({
+      empresa_id: empresaId,
+      nombre,
+      tipo: 'materia_prima',
+      unidad,
+      stock_actual: stock,
+      stock_minimo: 0,
+      costo_unitario: costo,
+    })
+    .select('id, nombre, unidad, costo_unitario, stock_actual')
+    .single();
+  if (error || !nuevo) return { ok: false, error: 'No pudimos crear el ingrediente.' };
+
+  if (stock > 0) {
+    await admin.from('movimientos_insumos').insert({
+      empresa_id: empresaId,
+      insumo_id: nuevo.id,
+      tipo: 'entrada',
+      cantidad: stock,
+      referencia_tipo: 'inicial',
+      notas: 'Stock inicial (creado desde la receta)',
+    });
+  }
+
+  refrescar();
+  return {
+    ok: true,
+    insumo: {
+      id: nuevo.id as string,
+      nombre: nuevo.nombre as string,
+      unidad: (nuevo.unidad as string) ?? 'unidad',
+      costo_unitario: Number(nuevo.costo_unitario) || 0,
+      stock_actual: Number(nuevo.stock_actual) || 0,
+    },
+  };
+}
+
 /**
  * Conecta un PRODUCTO del POS con un INSUMO del Inventario: a partir de aquí
  * comparten UN SOLO stock (fuente de verdad: el insumo). Arregla el caso de

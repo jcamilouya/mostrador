@@ -3,6 +3,7 @@
 import { useActionState, useRef, useState, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,14 +15,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Camera, Check, Loader2, Plus, Save, ArrowLeft, X, Layers, Trash2, Carrot } from 'lucide-react';
+import { Camera, Check, Loader2, Plus, Save, ArrowLeft, X, Layers, Trash2, Carrot, AlertTriangle } from 'lucide-react';
 import type { Categoria, Producto } from '@/lib/inventario/queries';
 import type { ActionState } from '@/lib/inventario/actions';
 import { crearCategoria } from '@/lib/inventario/actions';
-import { unidadCorta } from '@/lib/insumos/units';
+import { crearInsumoRapido } from '@/lib/insumos/actions';
+import { UNIDADES, unidadCorta, formatCantidad } from '@/lib/insumos/units';
 import { formatCOP } from '@/lib/utils/format';
 
-export type InsumoOpcion = { id: string; nombre: string; unidad: string; costo_unitario: number };
+export type InsumoOpcion = {
+  id: string;
+  nombre: string;
+  unidad: string;
+  costo_unitario: number;
+  stock_actual: number;
+};
 
 function SubmitButton({ creando }: { creando: boolean }) {
   const { pending } = useFormStatus();
@@ -96,6 +104,230 @@ async function comprimirImagen(file: File, maxDim = 1280, calidad = 0.8): Promis
   }
 }
 
+/**
+ * Un renglón de la receta: qué ingrediente y cuánto lleva. Si el ingrediente no
+ * existe todavía se crea aquí mismo — sin salir del producto ni perder lo escrito.
+ */
+function RecetaFila({
+  fila,
+  insumos,
+  onCambiar,
+  onQuitar,
+  onCrear,
+}: {
+  fila: { insumo_id: string; cantidad: string };
+  insumos: InsumoOpcion[];
+  onCambiar: (campo: 'insumo_id' | 'cantidad', valor: string) => void;
+  onQuitar: () => void;
+  onCrear: (nuevo: InsumoOpcion) => void;
+}) {
+  const [creando, setCreando] = useState(false);
+  const [nombre, setNombre] = useState('');
+  const [unidad, setUnidad] = useState('unidad');
+  const [stock, setStock] = useState('');
+  const [costo, setCosto] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const ins = insumos.find((x) => x.id === fila.insumo_id);
+  const cantidad = Number(fila.cantidad) || 0;
+  const costoLinea = ins ? cantidad * ins.costo_unitario : 0;
+  const falta = ins && cantidad > 0 && ins.stock_actual < cantidad;
+
+  function guardarNuevo() {
+    const n = nombre.trim();
+    if (n.length < 2) {
+      setError('Escribe el nombre del ingrediente');
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const res = await crearInsumoRapido({
+        nombre: n,
+        unidad,
+        stock_actual: Number(stock) || 0,
+        costo_unitario: Number(costo) || 0,
+      });
+      if (res.ok && res.insumo) {
+        onCrear(res.insumo);
+        setCreando(false);
+        setNombre('');
+        setStock('');
+        setCosto('');
+        setUnidad('unidad');
+        toast.success(
+          res.yaExistia
+            ? `Ya tenías "${res.insumo.nombre}", lo usamos en la receta`
+            : `"${res.insumo.nombre}" quedó en tu inventario`,
+        );
+      } else {
+        setError(res.error ?? 'No pudimos crearlo');
+      }
+    });
+  }
+
+  return (
+    <div className="rounded-2xl border border-border p-2.5">
+      <div className="grid grid-cols-[1fr_7rem_2.5rem] items-center gap-2">
+        <select
+          value={fila.insumo_id}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === '__nuevo__') {
+              setCreando(true);
+              return;
+            }
+            onCambiar('insumo_id', v);
+          }}
+          className="h-11 rounded-xl border border-border bg-background px-3 text-sm"
+        >
+          <option value="">Elige ingrediente…</option>
+          {insumos.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.nombre}
+            </option>
+          ))}
+          <option value="__nuevo__">➕ Crear ingrediente nuevo…</option>
+        </select>
+
+        <div className="relative">
+          <Input
+            value={fila.cantidad}
+            onChange={(e) => onCambiar('cantidad', e.target.value)}
+            type="number"
+            step="any"
+            min="0"
+            placeholder="Cuánto"
+            className="rounded-xl h-11 tabular-nums pr-9"
+          />
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+            {ins ? unidadCorta(ins.unidad) : ''}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={onQuitar}
+          className="flex h-11 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
+          aria-label="Quitar ingrediente"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Lo que cuesta este renglón y si el ingrediente ya se acabó */}
+      {ins && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-xs">
+          {costoLinea > 0 && (
+            <span className="text-muted-foreground">
+              Cuesta {formatCOP(costoLinea)} por unidad
+            </span>
+          )}
+          {falta ? (
+            <span className="inline-flex items-center gap-1 font-medium text-[var(--egreso)]">
+              <AlertTriangle className="h-3 w-3" />
+              Te queda {formatCantidad(ins.stock_actual, ins.unidad)} de {ins.nombre}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              Tienes {formatCantidad(ins.stock_actual, ins.unidad)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Crear el ingrediente sin salir de aquí */}
+      {creando && (
+        <div className="mt-2.5 space-y-3 rounded-xl bg-secondary/40 p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Ingrediente nuevo
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setCreando(false);
+                setError(null);
+              }}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3" /> Cancelar
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_9rem]">
+            <Input
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  guardarNuevo();
+                }
+              }}
+              placeholder="Ej: Fresa, Queso rallado"
+              autoFocus
+              className="rounded-xl h-10 text-sm"
+            />
+            <select
+              value={unidad}
+              onChange={(e) => setUnidad(e.target.value)}
+              className="h-10 rounded-xl border border-border bg-background px-3 text-sm"
+            >
+              {UNIDADES.map((u) => (
+                <option key={u.value} value={u.value}>
+                  Se mide en {u.label.toLowerCase()}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">¿Cuánto tienes?</Label>
+              <Input
+                value={stock}
+                onChange={(e) => setStock(e.target.value)}
+                type="number"
+                step="any"
+                min="0"
+                placeholder="0"
+                className="rounded-xl h-10 text-sm tabular-nums"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                Costo por {unidadCorta(unidad)}
+              </Label>
+              <Input
+                value={costo}
+                onChange={(e) => setCosto(e.target.value)}
+                type="number"
+                step="any"
+                min="0"
+                placeholder="0"
+                className="rounded-xl h-10 text-sm tabular-nums"
+              />
+            </div>
+          </div>
+
+          {error && <p className="text-xs text-[var(--egreso)]">{error}</p>}
+
+          <Button
+            type="button"
+            onClick={guardarNuevo}
+            disabled={pending}
+            className="h-10 w-full rounded-xl gap-1.5 text-sm"
+          >
+            {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+            Crear y usarlo en la receta
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ProductForm({
   action,
   categorias,
@@ -146,6 +378,9 @@ export function ProductForm({
     setVariantes((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  // Lista viva de ingredientes: los creados aquí mismo aparecen al instante.
+  const [listaInsumos, setListaInsumos] = useState<InsumoOpcion[]>(insumos);
+
   // Receta: ingredientes que consume 1 unidad del producto.
   const [receta, setReceta] = useState<{ insumo_id: string; cantidad: string }[]>(
     recetaInicial.map((r) => ({ insumo_id: r.insumo_id, cantidad: String(r.cantidad) })),
@@ -153,7 +388,9 @@ export function ProductForm({
   const recetaLimpia = receta
     .filter((r) => r.insumo_id && Number(r.cantidad) > 0)
     .map((r) => ({ insumo_id: r.insumo_id, cantidad: Number(r.cantidad) }));
-  const insumoUnidad = (id: string) => insumos.find((x) => x.id === id)?.unidad ?? '';
+  const buscarInsumo = (id: string) => listaInsumos.find((x) => x.id === id);
+  // Un producto con receta se PREPARA: su stock sale de los ingredientes.
+  const sePrepara = recetaLimpia.length > 0;
 
   function agregarReceta() {
     setReceta((prev) => [...prev, { insumo_id: '', cantidad: '' }]);
@@ -164,11 +401,20 @@ export function ProductForm({
   function quitarReceta(idx: number) {
     setReceta((prev) => prev.filter((_, i) => i !== idx));
   }
+  /** Registra el ingrediente recién creado y lo deja elegido en su renglón. */
+  function usarInsumoNuevo(idx: number, nuevo: InsumoOpcion) {
+    setListaInsumos((prev) =>
+      prev.some((x) => x.id === nuevo.id)
+        ? prev
+        : [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)),
+    );
+    actualizarReceta(idx, 'insumo_id', nuevo.id);
+  }
 
   // Costo real de la receta (Σ cantidad × costo del insumo) y ganancia en vivo.
   const [precioVenta, setPrecioVenta] = useState(String(producto?.precio_venta ?? ''));
   const costoReceta = recetaLimpia.reduce((acc, r) => {
-    const ins = insumos.find((x) => x.id === r.insumo_id);
+    const ins = buscarInsumo(r.insumo_id);
     return acc + (ins ? r.cantidad * ins.costo_unitario : 0);
   }, 0);
   const precioNum = Number(precioVenta) || 0;
@@ -552,102 +798,72 @@ export function ProductForm({
           <div className="rounded-3xl bg-card p-6 shadow-sm space-y-4">
             <div>
               <h2 className="flex items-center gap-2 font-semibold">
-                <Carrot className="h-4 w-4" /> Receta / Ingredientes
+                <Carrot className="h-4 w-4" /> ¿Con qué se prepara?
               </h2>
               <p className="text-xs text-muted-foreground">
-                Qué ingredientes y cuánto usa <strong>1 unidad</strong> de este producto. Al
-                venderlo, se descuentan solos del inventario de ingredientes.
+                Anota lo que lleva <strong>una sola unidad</strong>. Ejemplo, una ensalada de
+                frutas: 3 fresas, 1 banano, 15 g de queso rallado. Cada vez que la vendas, eso
+                se descuenta solo del inventario. Si te falta un ingrediente, lo puedes crear
+                aquí mismo.
               </p>
             </div>
 
-            {insumos.length === 0 ? (
+            {receta.length > 0 && (
+              <div className="space-y-2">
+                {receta.map((r, idx) => (
+                  <RecetaFila
+                    key={idx}
+                    fila={r}
+                    insumos={listaInsumos}
+                    onCambiar={(campo, valor) => actualizarReceta(idx, campo, valor)}
+                    onQuitar={() => quitarReceta(idx)}
+                    onCrear={(nuevo) => usarInsumoNuevo(idx, nuevo)}
+                  />
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={agregarReceta}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-dashed px-3 py-2 text-sm text-primary hover:bg-primary/10 transition-colors"
+            >
+              <Plus className="h-4 w-4" /> Agregar ingrediente
+            </button>
+
+            {receta.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                Primero crea ingredientes en{' '}
-                <Link href="/dashboard/insumos" className="text-primary underline">
-                  Ingredientes
-                </Link>{' '}
-                y vuelve aquí para armar la receta.
+                Si no le pones receta, el producto se vende tal cual y llevas su stock a mano.
+                Los ingredientes que agregues aquí se descuentan solos en cada venta.
               </p>
-            ) : (
-              <>
-                {receta.length > 0 && (
-                  <div className="space-y-2">
-                    {receta.map((r, idx) => (
-                      <div key={idx} className="grid grid-cols-[1fr_7rem_2.5rem] items-center gap-2">
-                        <select
-                          value={r.insumo_id}
-                          onChange={(e) => actualizarReceta(idx, 'insumo_id', e.target.value)}
-                          className="h-11 rounded-xl border border-border bg-background px-3 text-sm"
-                        >
-                          <option value="">Elige ingrediente…</option>
-                          {insumos.map((ins) => (
-                            <option key={ins.id} value={ins.id}>
-                              {ins.nombre}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="relative">
-                          <Input
-                            value={r.cantidad}
-                            onChange={(e) => actualizarReceta(idx, 'cantidad', e.target.value)}
-                            type="number"
-                            step="any"
-                            min="0"
-                            placeholder="Cant."
-                            className="rounded-xl h-11 tabular-nums pr-9"
-                          />
-                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                            {unidadCorta(insumoUnidad(r.insumo_id))}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => quitarReceta(idx)}
-                          className="flex h-11 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
-                          aria-label="Quitar ingrediente"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
+            )}
+
+            {recetaLimpia.length > 0 && (
+              <div className="rounded-2xl bg-secondary/50 p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Cuánto te cuesta prepararlo</span>
+                  <span className="font-semibold tabular-nums">
+                    {costoReceta > 0 ? formatCOP(costoReceta) : '—'}
+                  </span>
+                </div>
+                {costoReceta > 0 && precioNum > 0 && (
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-muted-foreground">Te queda de ganancia</span>
+                    <span
+                      className={`font-semibold tabular-nums ${
+                        gananciaReceta >= 0 ? 'text-[var(--ingreso)]' : 'text-[var(--egreso)]'
+                      }`}
+                    >
+                      {formatCOP(gananciaReceta)} ({margenPct}%)
+                    </span>
                   </div>
                 )}
-
-                <button
-                  type="button"
-                  onClick={agregarReceta}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-dashed px-3 py-2 text-sm text-primary hover:bg-primary/10 transition-colors"
-                >
-                  <Plus className="h-4 w-4" /> Agregar ingrediente
-                </button>
-
-                {recetaLimpia.length > 0 &&
-                  (costoReceta > 0 ? (
-                    <div className="rounded-2xl bg-secondary/50 p-3 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Costo de la receta (por unidad)</span>
-                        <span className="font-semibold tabular-nums">{formatCOP(costoReceta)}</span>
-                      </div>
-                      {precioNum > 0 && (
-                        <div className="mt-1 flex items-center justify-between">
-                          <span className="text-muted-foreground">Ganancia por unidad</span>
-                          <span
-                            className={`font-semibold tabular-nums ${
-                              gananciaReceta >= 0 ? 'text-[var(--ingreso)]' : 'text-[var(--egreso)]'
-                            }`}
-                          >
-                            {formatCOP(gananciaReceta)} ({margenPct}%)
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Ponle costo a tus ingredientes (en la sección Ingredientes) para ver cuánto te
-                      cuesta hacer este producto y cuánto ganas.
-                    </p>
-                  ))}
-              </>
+                {costoReceta === 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Ponle precio de costo a los ingredientes para ver cuánto ganas con cada uno.
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -697,6 +913,12 @@ export function ProductForm({
                 🥤 El stock de este producto se controla desde{' '}
                 <strong>Inventario → Bebidas</strong>. Es el mismo stock: al reponer inventario o
                 vender, se sincroniza solo.
+              </p>
+            ) : sePrepara ? (
+              <p className="text-sm text-muted-foreground">
+                🍽️ Este producto <strong>se prepara</strong>, así que no lleva un stock a mano:
+                lo que manda es el inventario de sus ingredientes. Si alguno se acaba, el POS
+                te avisa al venderlo.
               </p>
             ) : (
               <>

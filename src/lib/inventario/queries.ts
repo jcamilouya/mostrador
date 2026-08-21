@@ -59,6 +59,8 @@ export type ProductoStock = {
   stock_actual: number;
   stock_minimo: number;
   precio_venta: number;
+  /** Se prepara con receta: no lleva stock propio, no cuenta como "por agotarse". */
+  sePrepara: boolean;
 };
 
 /**
@@ -100,6 +102,14 @@ export async function getProductosConStock(empresaId: string): Promise<ProductoS
     for (const i of ins ?? []) stockInsumo.set(i.id as string, Number(i.stock_actual) || 0);
   }
 
+  // Los productos que se preparan no tienen stock propio que valga la pena
+  // vigilar: lo que se vigila son sus ingredientes.
+  const { data: conReceta } = await supabase
+    .from('producto_receta')
+    .select('producto_id')
+    .eq('empresa_id', empresaId);
+  const recetas = new Set((conReceta ?? []).map((r) => r.producto_id as string));
+
   return filas.map((p) => {
     const insumoId = p.insumo_id as string | null;
     const linked = insumoId ? stockInsumo.get(insumoId) : undefined;
@@ -109,6 +119,7 @@ export async function getProductosConStock(empresaId: string): Promise<ProductoS
       stock_actual: linked !== undefined ? Math.floor(linked) : Number(p.stock_actual) || 0,
       stock_minimo: Number(p.stock_minimo) || 0,
       precio_venta: Number(p.precio_venta) || 0,
+      sePrepara: recetas.has(p.id as string),
     };
   });
 }

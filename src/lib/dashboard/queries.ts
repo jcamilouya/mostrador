@@ -57,7 +57,7 @@ export async function getDashboardStats(empresaId: string): Promise<DashboardSta
   const egresosHoyCount = egresos.length;
 
   const productosStockBajo = productosRes.filter(
-    (p) => p.stock_actual <= p.stock_minimo,
+    (p) => !p.sePrepara && p.stock_actual <= p.stock_minimo,
   ).length;
 
   return {

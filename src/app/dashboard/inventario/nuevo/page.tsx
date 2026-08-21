@@ -37,6 +37,7 @@ export default async function NuevoProductoPage() {
             nombre: i.nombre,
             unidad: i.unidad,
             costo_unitario: i.costo_unitario,
+            stock_actual: i.stock_actual,
           }))}
       />
     </div>

@@ -164,16 +164,27 @@ export async function getRecetaDeProducto(
   });
 }
 
+/** Un ingrediente de la receta que ya no alcanza para preparar 1 unidad. */
+export type IngredienteFaltante = {
+  nombre: string;
+  unidad: string;
+  /** Cuánto pide la receta para 1 unidad. */
+  necesita: number;
+  /** Cuánto queda en el inventario. */
+  stock: number;
+};
+
 export type ResumenReceta = {
   /** Costo real de 1 unidad del producto = Σ(cantidad × costo del insumo). */
   costoReceta: number;
-  /** Cuántas unidades del producto alcanzan con el stock de ingredientes (min). */
-  disponibles: number | null;
+  /** Ingredientes que ya no alcanzan ni para una. Vacío = se puede preparar. */
+  faltantes: IngredienteFaltante[];
 };
 
 /**
- * Para todos los productos con receta: costo real por unidad + cuántas se pueden
- * hacer con el stock actual de ingredientes. Los productos sin receta no aparecen.
+ * Para todos los productos con receta: costo real por unidad + qué ingredientes
+ * se acabaron. Los productos sin receta no aparecen (por eso sirve además para
+ * saber si un producto se prepara o se vende tal cual).
  * Devuelve `{}` si aún no existe la tabla (seguro antes de correr la migración).
  */
 export async function getResumenRecetas(
@@ -182,7 +193,7 @@ export async function getResumenRecetas(
   const supabase = await createClient();
   const { data } = await supabase
     .from('producto_receta')
-    .select('producto_id, cantidad, insumos ( costo_unitario, stock_actual )')
+    .select('producto_id, cantidad, insumos ( nombre, unidad, costo_unitario, stock_actual )')
     .eq('empresa_id', empresaId);
 
   const map: Record<string, ResumenReceta> = {};
@@ -193,11 +204,15 @@ export async function getResumenRecetas(
     const stock = Number(ins?.stock_actual) || 0;
     const pid = r.producto_id as string;
 
-    const cur = map[pid] ?? { costoReceta: 0, disponibles: null };
+    const cur = map[pid] ?? { costoReceta: 0, faltantes: [] };
     cur.costoReceta += cantidad * costo;
-    if (cantidad > 0) {
-      const puede = Math.floor(stock / cantidad);
-      cur.disponibles = cur.disponibles === null ? puede : Math.min(cur.disponibles, puede);
+    if (cantidad > 0 && stock < cantidad) {
+      cur.faltantes.push({
+        nombre: (ins?.nombre as string) ?? 'Ingrediente',
+        unidad: (ins?.unidad as string) ?? 'unidad',
+        necesita: cantidad,
+        stock,
+      });
     }
     map[pid] = cur;
   }

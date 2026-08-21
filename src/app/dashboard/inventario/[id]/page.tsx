@@ -55,6 +55,7 @@ export default async function EditarProductoPage({
             nombre: i.nombre,
             unidad: i.unidad,
             costo_unitario: i.costo_unitario,
+            stock_actual: i.stock_actual,
           }))}
         recetaInicial={receta.map((r) => ({ insumo_id: r.insumo_id, cantidad: r.cantidad }))}
       />

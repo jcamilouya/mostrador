@@ -58,7 +58,8 @@ export function ProductGrid({
       insumo_extra_id: bebida?.id ?? null,
       precio_venta: opcion ? opcion.precio : p.precio_venta,
       precio_compra: p.precio_compra,
-      stock_disponible: p.stock_actual,
+      // Los preparados no tienen tope: se avisa si falta algo, no se bloquea.
+      stock_disponible: p.sePrepara ? Number.POSITIVE_INFINITY : p.stock_actual,
       categoria_color: p.categoria_color,
     });
   }
@@ -134,7 +135,9 @@ export function ProductGrid({
       ) : (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {filtrados.map((p) => {
-            const agotado = p.stock_actual <= 0;
+            // Un producto que se prepara NUNCA se agota por stock propio: su
+            // límite son los ingredientes, y ahí solo avisamos.
+            const agotado = !p.sePrepara && p.stock_actual <= 0;
             const tieneOpciones = p.variantes.length > 0;
             return (
               <button
@@ -181,17 +184,36 @@ export function ProductGrid({
                     )}
                     {formatCOP(tieneOpciones ? precioDesde(p) : p.precio_venta)}
                   </p>
-                  <span
-                    className={`text-[10px] ${
-                      agotado
-                        ? 'text-[var(--egreso)]'
-                        : p.stock_actual <= 5
-                          ? 'text-[var(--utilidad)]'
+                  {p.sePrepara ? (
+                    <span
+                      className={`text-[10px] ${
+                        p.faltantes.length > 0
+                          ? 'text-[var(--egreso)]'
                           : 'text-muted-foreground'
-                    }`}
-                  >
-                    {agotado ? 'Agotado' : `${p.stock_actual} disp.`}
-                  </span>
+                      }`}
+                      title={
+                        p.faltantes.length > 0
+                          ? `Sin existencias de: ${p.faltantes.join(', ')}`
+                          : 'Se prepara con receta'
+                      }
+                    >
+                      {p.faltantes.length > 0
+                        ? `Falta ${p.faltantes[0]}${p.faltantes.length > 1 ? ` +${p.faltantes.length - 1}` : ''}`
+                        : 'Se prepara'}
+                    </span>
+                  ) : (
+                    <span
+                      className={`text-[10px] ${
+                        agotado
+                          ? 'text-[var(--egreso)]'
+                          : p.stock_actual <= 5
+                            ? 'text-[var(--utilidad)]'
+                            : 'text-muted-foreground'
+                      }`}
+                    >
+                      {agotado ? 'Agotado' : `${p.stock_actual} disp.`}
+                    </span>
+                  )}
                 </div>
               </button>
             );

@@ -94,6 +94,12 @@ export async function crearProducto(_prev: ActionState, formData: FormData): Pro
   }
 
   const admin = createAdminClient();
+
+  // Un producto CON RECETA se prepara: su stock son los ingredientes, no un
+  // número a mano. Guardarlo en 0 evita que ese número fantasma lo "agote".
+  const receta = parseReceta(formData.get('receta'));
+  const sePrepara = receta.length > 0;
+
   const { data: nuevo, error } = await admin
     .from('productos')
     .insert({
@@ -105,8 +111,8 @@ export async function crearProducto(_prev: ActionState, formData: FormData): Pro
       categoria_id: parsed.data.categoria_id || null,
       precio_compra: parsed.data.precio_compra,
       precio_venta: parsed.data.precio_venta,
-      stock_actual: parsed.data.stock_actual,
-      stock_minimo: parsed.data.stock_minimo,
+      stock_actual: sePrepara ? 0 : parsed.data.stock_actual,
+      stock_minimo: sePrepara ? 0 : parsed.data.stock_minimo,
       activo: true,
       variantes: parsed.data.variantes,
       pide_bebida: parsed.data.pide_bebida,
@@ -117,7 +123,7 @@ export async function crearProducto(_prev: ActionState, formData: FormData): Pro
 
   if (error || !nuevo) return { error: 'No pudimos guardar el producto. Intenta de nuevo.' };
 
-  await reemplazarReceta(admin, session.empresaId, nuevo.id, parseReceta(formData.get('receta')));
+  await reemplazarReceta(admin, session.empresaId, nuevo.id, receta);
 
   revalidatePath('/dashboard/inventario');
   redirect('/dashboard/inventario');
@@ -173,6 +179,11 @@ export async function actualizarProducto(
     .maybeSingle();
   const vinculado = Boolean((actual as Record<string, unknown> | null)?.insumo_id);
 
+  // Con receta el stock son los ingredientes: se guarda en 0 y el formulario
+  // ni siquiera pide el número.
+  const receta = parseReceta(formData.get('receta'));
+  const sePrepara = receta.length > 0;
+
   const updatePayload: Record<string, unknown> = {
     nombre: parsed.data.nombre,
     descripcion: parsed.data.descripcion || null,
@@ -186,7 +197,10 @@ export async function actualizarProducto(
     pide_bebida: parsed.data.pide_bebida,
     updated_at: new Date().toISOString(),
   };
-  if (!vinculado) {
+  if (sePrepara) {
+    updatePayload.stock_actual = 0;
+    updatePayload.stock_minimo = 0;
+  } else if (!vinculado) {
     updatePayload.stock_actual = parsed.data.stock_actual;
     updatePayload.stock_minimo = parsed.data.stock_minimo;
   }
@@ -200,7 +214,7 @@ export async function actualizarProducto(
 
   if (error) return { error: 'No pudimos actualizar el producto.' };
 
-  await reemplazarReceta(admin, session.empresaId, id, parseReceta(formData.get('receta')));
+  await reemplazarReceta(admin, session.empresaId, id, receta);
 
   revalidatePath('/dashboard/inventario');
   redirect('/dashboard/inventario');

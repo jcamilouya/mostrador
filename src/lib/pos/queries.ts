@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { normalizarVariantes, type VarianteItem } from '@/lib/inventario/queries';
+import { getResumenRecetas } from '@/lib/insumos/queries';
 import { inicioDiaBogotaISO, finDiaBogotaISO } from '@/lib/utils/fecha';
 
 export type ProductoPOS = {
@@ -14,6 +15,10 @@ export type ProductoPOS = {
   categoria_color: string | null;
   variantes: VarianteItem[];
   pide_bebida: boolean;
+  /** El producto se prepara con receta: no lleva stock propio. */
+  sePrepara: boolean;
+  /** Ingredientes de la receta que ya no alcanzan (para avisar, no bloquear). */
+  faltantes: string[];
 };
 
 export type VentaResumen = {
@@ -48,9 +53,14 @@ export async function getProductosPOS(empresaId: string): Promise<ProductoPOS[]>
     for (const i of ins ?? []) stockInsumo.set(i.id as string, Number(i.stock_actual) || 0);
   }
 
+  // Productos que se preparan con receta: no llevan stock propio, y si les
+  // falta un ingrediente el POS avisa (no bloquea).
+  const recetas = await getResumenRecetas(empresaId);
+
   return data.map((p) => {
     const cat = Array.isArray(p.categorias) ? p.categorias[0] ?? null : p.categorias;
     const linked = p.insumo_id ? stockInsumo.get(p.insumo_id) : undefined;
+    const receta = recetas[p.id as string];
     return {
       id: p.id,
       nombre: p.nombre,
@@ -63,6 +73,8 @@ export async function getProductosPOS(empresaId: string): Promise<ProductoPOS[]>
       categoria_color: (cat as { color?: string } | null)?.color ?? null,
       variantes: normalizarVariantes(p.variantes),
       pide_bebida: p.pide_bebida === true,
+      sePrepara: Boolean(receta),
+      faltantes: (receta?.faltantes ?? []).map((f) => f.nombre),
     };
   });
 }
