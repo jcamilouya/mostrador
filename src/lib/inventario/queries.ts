@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { getEmpresaId } from '@/lib/auth/sesion';
 import type { VarianteItem } from './schemas';
 
 export type { VarianteItem };
@@ -41,16 +42,12 @@ export type Categoria = {
   color: string;
 };
 
+/**
+ * Empresa del usuario actual. Delega en `getSesion()`, que está cacheado por
+ * request: llamarlo desde el layout y desde la página no cuesta dos veces.
+ */
 export async function getEmpresaIdDelUsuario(): Promise<string | null> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data } = await supabase
-    .from('usuarios')
-    .select('empresa_id')
-    .eq('id', user.id)
-    .maybeSingle();
-  return data?.empresa_id ?? null;
+  return getEmpresaId();
 }
 
 export type ProductoStock = {

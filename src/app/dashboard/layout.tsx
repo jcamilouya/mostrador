@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { getSesion } from '@/lib/auth/sesion';
 import { Sidebar } from '@/components/shared/Sidebar';
 import { BottomNav } from '@/components/shared/BottomNav';
 import { RealtimeRefresher } from '@/components/shared/RealtimeRefresher';
@@ -12,29 +12,18 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  // Cacheado por request: la página que se renderiza dentro reusa esto mismo.
+  const sesion = await getSesion();
+  if (!sesion) redirect('/login');
+  if (!sesion.empresaId) redirect('/onboarding');
 
-  const { data: usuario } = await supabase
-    .from('usuarios')
-    .select('empresa_id, nombre, empresas (nombre)')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (!usuario?.empresa_id) redirect('/onboarding');
-
-  const empresa = Array.isArray(usuario.empresas)
-    ? usuario.empresas[0]
-    : usuario.empresas;
-  const nombreEmpresa = (empresa as { nombre?: string } | null)?.nombre ?? 'Mi negocio';
-
-  const plan = await getPlanInfo(usuario.empresa_id);
-  const esAdmin = isSuperAdminEmail(user.email);
+  const nombreEmpresa = sesion.empresaNombre;
+  const plan = await getPlanInfo(sesion.empresaId);
+  const esAdmin = isSuperAdminEmail(sesion.email ?? undefined);
 
   return (
     <div className="flex min-h-screen bg-background">
-      <RealtimeRefresher empresaId={usuario.empresa_id} />
+      <RealtimeRefresher empresaId={sesion.empresaId} />
       <Sidebar negocio={nombreEmpresa} esAdmin={esAdmin} />
       <div className="flex flex-1 flex-col pb-[calc(5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
         <PlanBanner plan={plan} />

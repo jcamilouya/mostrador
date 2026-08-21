@@ -11,12 +11,11 @@ import {
   ArrowRight,
   Carrot,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
-import { getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
+import { getSesion } from '@/lib/auth/sesion';
 import { getDashboardStats } from '@/lib/dashboard/queries';
 import { contarInsumosBajos } from '@/lib/insumos/queries';
 import { getBalanceDiario } from '@/lib/analitica/queries';
-import { RevenueChart } from '@/components/dashboard/RevenueChart';
+import { RevenueChartLazy } from '@/components/dashboard/RevenueChartLazy';
 import { WelcomeGuide } from '@/components/dashboard/WelcomeGuide';
 import { formatCOP } from '@/lib/utils/format';
 
@@ -32,21 +31,18 @@ const METODO: Record<string, string> = {
 };
 
 export default async function DashboardHome() {
-  const empresaId = await getEmpresaIdDelUsuario();
+  // Mismo objeto que ya resolvió el layout: no cuesta otro viaje a Supabase.
+  const sesion = await getSesion();
+  const empresaId = sesion?.empresaId ?? null;
   if (!empresaId) redirect('/onboarding');
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
   const [stats, balance, insumosBajos] = await Promise.all([
     getDashboardStats(empresaId),
     getBalanceDiario(empresaId, 30),
     contarInsumosBajos(empresaId),
   ]);
 
-  const nombre =
-    (user?.user_metadata?.nombre as string | undefined) ??
-    user?.email?.split('@')[0] ??
-    'tendero';
+  const nombre = sesion?.nombre ?? sesion?.email?.split('@')[0] ?? 'tendero';
 
   const hora = new Date().getHours();
   const saludo =
@@ -98,7 +94,7 @@ export default async function DashboardHome() {
         />
       </section>
 
-      <RevenueChart serie={balance} />
+      <RevenueChartLazy serie={balance} />
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-3xl bg-card p-5 shadow-sm">

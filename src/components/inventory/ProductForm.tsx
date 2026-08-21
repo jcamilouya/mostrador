@@ -128,11 +128,15 @@ function RecetaFila({
   const [costo, setCosto] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const cantidadRef = useRef<HTMLInputElement>(null);
 
   const ins = insumos.find((x) => x.id === fila.insumo_id);
   const cantidad = Number(fila.cantidad) || 0;
   const costoLinea = ins ? cantidad * ins.costo_unitario : 0;
   const falta = ins && cantidad > 0 && ins.stock_actual < cantidad;
+  // Renglón a medias: ingrediente elegido pero sin decir cuánto lleva. Antes se
+  // descartaba en silencio y la receta salía vacía.
+  const sinCantidad = Boolean(ins) && cantidad <= 0;
 
   function guardarNuevo() {
     const n = nombre.trim();
@@ -149,7 +153,8 @@ function RecetaFila({
         costo_unitario: Number(costo) || 0,
       });
       if (res.ok && res.insumo) {
-        onCrear(res.insumo);
+        const creado = res.insumo;
+        onCrear(creado);
         setCreando(false);
         setNombre('');
         setStock('');
@@ -157,9 +162,12 @@ function RecetaFila({
         setUnidad('unidad');
         toast.success(
           res.yaExistia
-            ? `Ya tenías "${res.insumo.nombre}", lo usamos en la receta`
-            : `"${res.insumo.nombre}" quedó en tu inventario`,
+            ? `Ya tenías "${creado.nombre}", lo usamos en la receta`
+            : `"${creado.nombre}" quedó en tu inventario`,
+          { description: `Ahora dime cuánto lleva una unidad de este producto.` },
         );
+        // Lo que falta es la cantidad de la receta: llevar el cursor allá.
+        setTimeout(() => cantidadRef.current?.focus(), 60);
       } else {
         setError(res.error ?? 'No pudimos crearlo');
       }
@@ -167,8 +175,12 @@ function RecetaFila({
   }
 
   return (
-    <div className="rounded-2xl border border-border p-2.5">
-      <div className="grid grid-cols-[1fr_7rem_2.5rem] items-center gap-2">
+    <div
+      className={`rounded-2xl border p-2.5 ${
+        sinCantidad ? 'border-[var(--egreso)]' : 'border-border'
+      }`}
+    >
+      <div className="flex items-center gap-2">
         <select
           value={fila.insumo_id}
           onChange={(e) => {
@@ -179,7 +191,7 @@ function RecetaFila({
             }
             onCambiar('insumo_id', v);
           }}
-          className="h-11 rounded-xl border border-border bg-background px-3 text-sm"
+          className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm"
         >
           <option value="">Elige ingrediente…</option>
           {insumos.map((i) => (
@@ -190,29 +202,45 @@ function RecetaFila({
           <option value="__nuevo__">➕ Crear ingrediente nuevo…</option>
         </select>
 
-        <div className="relative">
+        <button
+          type="button"
+          onClick={onQuitar}
+          className="flex h-11 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
+          aria-label="Quitar ingrediente"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Cuánto lleva UNA unidad del producto. Es otro número distinto al que
+          tienes en la nevera, y confundirlos dejaba la receta vacía. */}
+      <div className="mt-2 flex flex-wrap items-center gap-2 pl-1">
+        <Label htmlFor={`cant-${fila.insumo_id || 'nuevo'}`} className="text-sm">
+          ¿Cuánto lleva <strong>una</strong>?
+        </Label>
+        <div className="relative w-32">
           <Input
+            id={`cant-${fila.insumo_id || 'nuevo'}`}
+            ref={cantidadRef}
             value={fila.cantidad}
             onChange={(e) => onCambiar('cantidad', e.target.value)}
             type="number"
             step="any"
             min="0"
-            placeholder="Cuánto"
-            className="rounded-xl h-11 tabular-nums pr-9"
+            placeholder="0"
+            className={`rounded-xl h-10 tabular-nums pr-10 ${
+              sinCantidad ? 'border-[var(--egreso)]' : ''
+            }`}
           />
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
             {ins ? unidadCorta(ins.unidad) : ''}
           </span>
         </div>
-
-        <button
-          type="button"
-          onClick={onQuitar}
-          className="flex h-11 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
-          aria-label="Quitar ingrediente"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        {sinCantidad && (
+          <span className="text-xs font-medium text-[var(--egreso)]">
+            Falta este dato
+          </span>
+        )}
       </div>
 
       {/* Lo que cuesta este renglón y si el ingrediente ya se acabó */}
@@ -282,9 +310,14 @@ function RecetaFila({
             </select>
           </div>
 
+          <p className="text-xs text-muted-foreground">
+            Esto es lo que tienes guardado, no lo que lleva la receta. Lo de la receta se
+            pregunta después, en el renglón.
+          </p>
+
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">¿Cuánto tienes?</Label>
+              <Label className="text-xs text-muted-foreground">¿Cuánto tienes guardado?</Label>
               <Input
                 value={stock}
                 onChange={(e) => setStock(e.target.value)}
@@ -389,6 +422,9 @@ export function ProductForm({
     .filter((r) => r.insumo_id && Number(r.cantidad) > 0)
     .map((r) => ({ insumo_id: r.insumo_id, cantidad: Number(r.cantidad) }));
   const buscarInsumo = (id: string) => listaInsumos.find((x) => x.id === id);
+  // Renglones con ingrediente pero sin cantidad: si se guardaran así, se caerían
+  // en silencio y el producto quedaría sin receta.
+  const recetaIncompleta = receta.filter((r) => r.insumo_id && !(Number(r.cantidad) > 0));
   // Un producto con receta se PREPARA: su stock sale de los ingredientes.
   const sePrepara = recetaLimpia.length > 0;
 
@@ -484,7 +520,23 @@ export function ProductForm({
   }
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form
+      action={formAction}
+      onSubmit={(e) => {
+        if (recetaIncompleta.length > 0) {
+          e.preventDefault();
+          const nombres = recetaIncompleta
+            .map((r) => buscarInsumo(r.insumo_id)?.nombre)
+            .filter(Boolean)
+            .join(', ');
+          toast('Falta decir cuánto lleva la receta', {
+            description: `Escribe cuánto lleva una unidad de: ${nombres}.`,
+          });
+          document.getElementById('receta-seccion')?.scrollIntoView({ behavior: 'smooth' });
+        }
+      }}
+      className="space-y-6"
+    >
       {/* Hidden para quitar imagen */}
       {quitarImagen && <input type="hidden" name="quitar_imagen" value="1" />}
 
@@ -795,7 +847,7 @@ export function ProductForm({
           </div>
 
           {/* Receta / ingredientes */}
-          <div className="rounded-3xl bg-card p-6 shadow-sm space-y-4">
+          <div id="receta-seccion" className="rounded-3xl bg-card p-6 shadow-sm space-y-4">
             <div>
               <h2 className="flex items-center gap-2 font-semibold">
                 <Carrot className="h-4 w-4" /> ¿Con qué se prepara?
