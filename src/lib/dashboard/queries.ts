@@ -38,10 +38,13 @@ export async function getDashboardStats(empresaId: string): Promise<DashboardSta
       .select('monto')
       .eq('empresa_id', empresaId)
       .eq('fecha', hoyDate),
+    // Solo lo COBRADO. Una mesa abierta todavía no es plata que entró, y una
+    // anulada no entró nunca: ninguna de las dos puede figurar como ingreso.
     supabase
       .from('ventas')
       .select('id, numero_venta, total, metodo_pago, created_at')
       .eq('empresa_id', empresaId)
+      .in('estado', ['completada', 'pendiente'])
       .order('created_at', { ascending: false })
       .limit(5),
     // Stock efectivo: las bebidas conectadas cuentan el stock del Inventario.

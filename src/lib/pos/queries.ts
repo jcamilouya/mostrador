@@ -85,6 +85,8 @@ export async function getVentasHoy(empresaId: string): Promise<VentaResumen[]> {
     .from('ventas')
     .select('id, numero_venta, total, metodo_pago, estado, created_at, venta_items (id)')
     .eq('empresa_id', empresaId)
+    // Las mesas abiertas se ven en /dashboard/mesas, no en las ventas del día.
+    .neq('estado', 'abierta')
     .gte('created_at', inicioDiaBogotaISO())
     .lt('created_at', finDiaBogotaISO())
     .order('created_at', { ascending: false })

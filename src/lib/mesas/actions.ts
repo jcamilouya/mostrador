@@ -230,7 +230,7 @@ export async function cobrarCuenta(input: unknown): Promise<CuentaResult> {
 
   const { data: venta } = await ctx.admin
     .from('ventas')
-    .select('id, numero_venta, estado')
+    .select('id, numero_venta, estado, cliente_id')
     .eq('id', parsed.data.venta_id)
     .eq('empresa_id', ctx.empresaId)
     .maybeSingle();
@@ -265,6 +265,7 @@ export async function cobrarCuenta(input: unknown): Promise<CuentaResult> {
     recargo,
   };
   if (parsed.data.mesa) cambios.mesa = parsed.data.mesa;
+  if (parsed.data.cliente_id) cambios.cliente_id = parsed.data.cliente_id;
 
   // Solo cierra si SIGUE abierta: si otro mesero la cobró primero, no se
   // descuenta el inventario dos veces.
@@ -289,6 +290,30 @@ export async function cobrarCuenta(input: unknown): Promise<CuentaResult> {
   if (updErr) return { ok: false, error: 'No pudimos cerrar la cuenta.' };
   if (!cerradas || cerradas.length === 0) {
     return { ok: false, error: 'Esa cuenta la acaban de cobrar desde otro lado.' };
+  }
+
+  // Acumular la compra del cliente, igual que una venta normal. Si esto no
+  // estuviera, cobrar por mesa no le sumaría nada a su historial.
+  const clienteId =
+    parsed.data.cliente_id ?? ((venta as Record<string, unknown>).cliente_id as string | null);
+  if (clienteId) {
+    const { data: cli } = await ctx.admin
+      .from('clientes')
+      .select('total_compras, cantidad_compras')
+      .eq('id', clienteId)
+      .eq('empresa_id', ctx.empresaId)
+      .maybeSingle();
+    if (cli) {
+      await ctx.admin
+        .from('clientes')
+        .update({
+          total_compras: (Number(cli.total_compras) || 0) + total,
+          cantidad_compras: (Number(cli.cantidad_compras) || 0) + 1,
+          ultima_compra: new Date().toISOString(),
+        })
+        .eq('id', clienteId)
+        .eq('empresa_id', ctx.empresaId);
+    }
   }
 
   const paraStock = lineas.map((i) => ({ producto_id: i.producto_id, cantidad: i.cantidad }));

@@ -109,6 +109,16 @@ Regla única: **si un producto tiene receta, la receta manda**. `productos.stock
 
 **Receta desde el formulario del producto:** `RecetaFila` (en `ProductForm`) crea ingredientes con `crearInsumoRapido` sin salir de la página, y reutiliza el homónimo si existe. Ojo con los **dos números que se confunden**: "cuánto tienes guardado" (stock del insumo) vs "cuánto lleva una" (cantidad de la receta). Confundirlos dejaba la receta vacía en silencio; por eso el renglón incompleto se marca en rojo y el submit se bloquea.
 
+### Reglas de contabilidad (INVIOLABLES — es la caja de un restaurante real)
+
+1. **Identidades numéricas.** `venta_items.subtotal = cantidad × precio_unitario`; `ventas.subtotal = Σ venta_items.subtotal`; `ventas.total = subtotal + iva + recargo` (hoy `iva = 0`). Verificado contra las 34 ventas reales: 0 descuadres. Si tocas precios o totales, vuelve a correr esa verificación.
+2. **Solo `completada` es plata que entró.** `abierta` (mesa sin cobrar) y `cancelada` nunca cuentan como ingreso. Toda query que sume o liste ventas debe filtrarlas: dashboard (KPIs y "últimas ventas"), ingresos (lista y agregados), POS (ventas de hoy), historial del cliente, analítica y reportes. Las RPC `balance_diario` y `ventas_por_hora` ya filtran `completada` en SQL.
+3. **El inventario se mueve al COBRAR, nunca al pedir.** Una cuenta abierta no descuenta nada; `cobrarCuenta` descuenta productos + ingredientes + bebidas en ese momento. Decisión del dueño: si el cliente cambia de opinión antes de pagar, no queda basura en el inventario.
+4. **Los precios y el recargo se calculan en el servidor**, nunca se confía en el número que manda el navegador (`registrarVenta`, `cobrarCuenta`).
+5. **Nada se descuenta dos veces.** El cierre de una cuenta filtra por `.eq('estado','abierta')`; la confirmación Bre-B por `.eq('estado','pendiente')`; un producto con receta no descuenta stock propio; un insumo conectado a un producto ignora su propia línea de receta.
+6. **El costo de venta se congela en `venta_items.precio_compra`** al momento de vender (receta si la hay, si no `productos.precio_compra`). Las ventas viejas conservan el costo que tenían: no se reescribe el pasado.
+7. **Acumulado del cliente**: sube en `registrarVenta` y en `cobrarCuenta`, y se revierte en `anularVenta`. Si agregas una cuarta forma de completar una venta, tiene que hacer las tres cosas (stock, cliente, revalidate).
+
 ### Mesas / cuentas abiertas (migración `014`)
 
 Una venta puede quedar en `estado = 'abierta'` con `ventas.mesa` (etiqueta libre). **No descuenta inventario ni cuenta como ingreso** hasta que se cobra: reportes y analítica no cambian porque filtran por `'completada'`. `lib/mesas/actions.ts`: `guardarCuenta` (abre o actualiza, reemplaza las líneas), `cobrarCuenta` (cierra **la misma** fila de `ventas` y ahí sí descuenta productos + ingredientes + bebidas) y `anularCuenta`. El cierre filtra por `.eq('estado','abierta')` para que dos meseros no descuenten dos veces. El carrito (`cart-store`) lleva `cuentaId`/`mesa`; con `cuentaId` puesto, el `PaymentModal` llama `cobrarCuenta` en vez de `registrarVenta`.

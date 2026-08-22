@@ -59,6 +59,9 @@ export async function getIngresos(
     )
     .eq('empresa_id', empresaId)
     .gte('created_at', desde)
+    // Las cuentas abiertas (mesas) no son ingreso hasta que se cobran: viven en
+    // /dashboard/mesas, no aquí.
+    .neq('estado', 'abierta')
     .order('created_at', { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1);
 
@@ -77,7 +80,8 @@ export async function getIngresos(
     .from('ventas')
     .select('total, estado')
     .eq('empresa_id', empresaId)
-    .gte('created_at', desde);
+    .gte('created_at', desde)
+    .neq('estado', 'abierta');
 
   let totalCompletado = 0;
   let countCompletado = 0;

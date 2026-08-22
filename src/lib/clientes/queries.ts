@@ -84,6 +84,8 @@ export async function getVentasCliente(
     .select('id, numero_venta, total, metodo_pago, estado, created_at')
     .eq('empresa_id', empresaId)
     .eq('cliente_id', clienteId)
+    // Una mesa abierta aún no es una compra del cliente.
+    .neq('estado', 'abierta')
     .order('created_at', { ascending: false })
     .limit(50);
 
