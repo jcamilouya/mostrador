@@ -8,10 +8,17 @@ type ClienteSel = { id: string; nombre: string; telefono: string | null };
 type CartState = {
   items: CartItem[];
   cliente: ClienteSel | null;
+  /** Si el carrito viene de una cuenta abierta (mesa), su id. */
+  cuentaId: string | null;
+  /** Etiqueta de esa cuenta: "Mesa 4", "Para llevar"… */
+  mesa: string | null;
   add: (item: Omit<CartItem, 'cantidad' | 'lineId'>) => void;
   setCantidad: (lineId: string, cantidad: number) => void;
   remove: (lineId: string) => void;
   setCliente: (cliente: ClienteSel | null) => void;
+  /** Carga una cuenta abierta en el carrito para seguirle agregando. */
+  cargarCuenta: (cuenta: { id: string; mesa: string; items: CartItem[] }) => void;
+  setMesa: (mesa: string | null) => void;
   clear: () => void;
   total: () => number;
   totalItems: () => number;
@@ -31,6 +38,8 @@ function calcularLineId(item: {
 export const useCart = create<CartState>((set, get) => ({
   items: [],
   cliente: null,
+  cuentaId: null,
+  mesa: null,
   add: (item) =>
     set((state) => {
       const lineId = calcularLineId(item);
@@ -74,7 +83,10 @@ export const useCart = create<CartState>((set, get) => ({
   remove: (lineId) =>
     set((state) => ({ items: state.items.filter((i) => i.lineId !== lineId) })),
   setCliente: (cliente) => set({ cliente }),
-  clear: () => set({ items: [], cliente: null }),
+  cargarCuenta: (cuenta) =>
+    set({ items: cuenta.items, cuentaId: cuenta.id, mesa: cuenta.mesa, cliente: null }),
+  setMesa: (mesa) => set({ mesa }),
+  clear: () => set({ items: [], cliente: null, cuentaId: null, mesa: null }),
   total: () => get().items.reduce((acc, i) => acc + i.cantidad * i.precio_venta, 0),
   totalItems: () => get().items.reduce((acc, i) => acc + i.cantidad, 0),
 }));

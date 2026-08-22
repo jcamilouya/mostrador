@@ -17,6 +17,7 @@ import { BrebQR } from '@/components/breb/BrebQR';
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
 import { registrarVenta } from '@/lib/pos/actions';
+import { cobrarCuenta } from '@/lib/mesas/actions';
 import { abrirWhatsAppRecibo, type ReciboData } from '@/lib/recibo';
 import { guardarClienteDesdeRecibo } from '@/lib/clientes/actions';
 import type { MetodoPago } from '@/lib/pos/types';
@@ -40,6 +41,9 @@ export function PaymentModal({
   const total = useCart((s) => s.total());
   const cliente = useCart((s) => s.cliente);
   const clear = useCart((s) => s.clear);
+  // Si el carrito viene de una mesa, cobrar cierra ESA cuenta.
+  const cuentaId = useCart((s) => s.cuentaId);
+  const mesa = useCart((s) => s.mesa);
 
   const [step, setStep] = useState<Step>('metodo');
   const [recibido, setRecibido] = useState<number>(0);
@@ -133,21 +137,36 @@ export function PaymentModal({
     startTransition(async () => {
       let res;
       try {
-        res = await registrarVenta({
-          metodo_pago: metodo,
-          confirmado,
-          cliente_id: cliente?.id ?? null,
-          idempotency_key: idemKey,
-          items: items.map((i) => ({
-            producto_id: i.producto_id,
-            cantidad: i.cantidad,
-            precio_unitario: i.precio_venta,
-            precio_compra: i.precio_compra,
-            nombre: i.nombre,
-            variante: i.variante ?? null,
-            insumo_extra_id: i.insumo_extra_id ?? null,
-          })),
-        });
+        res = cuentaId
+          ? // Cuenta de mesa: se cierra la venta que ya existe, no se crea otra.
+            await cobrarCuenta({
+              venta_id: cuentaId,
+              metodo_pago: metodo,
+              mesa: mesa ?? undefined,
+              cliente_id: cliente?.id ?? null,
+              items: items.map((i) => ({
+                producto_id: i.producto_id,
+                cantidad: i.cantidad,
+                nombre: i.nombre,
+                variante: i.variante ?? null,
+                insumo_extra_id: i.insumo_extra_id ?? null,
+              })),
+            })
+          : await registrarVenta({
+              metodo_pago: metodo,
+              confirmado,
+              cliente_id: cliente?.id ?? null,
+              idempotency_key: idemKey,
+              items: items.map((i) => ({
+                producto_id: i.producto_id,
+                cantidad: i.cantidad,
+                precio_unitario: i.precio_venta,
+                precio_compra: i.precio_compra,
+                nombre: i.nombre,
+                variante: i.variante ?? null,
+                insumo_extra_id: i.insumo_extra_id ?? null,
+              })),
+            });
       } catch {
         // Nunca dejar el modal colgado: si algo revienta, mostrar error claro.
         setError('No pudimos completar la venta. Revisa tu internet e inténtalo de nuevo.');

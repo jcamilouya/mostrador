@@ -10,6 +10,7 @@ import {
   Users,
   Sparkles,
   Settings,
+  UtensilsCrossed,
 } from 'lucide-react';
 
 export type NavItem = {
@@ -21,6 +22,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Inicio', icon: LayoutDashboard },
   { href: '/dashboard/pos', label: 'Vender', icon: ShoppingCart },
+  { href: '/dashboard/mesas', label: 'Mesas', icon: UtensilsCrossed },
   { href: '/dashboard/inventario', label: 'Productos', icon: Package },
   { href: '/dashboard/insumos', label: 'Inventario', icon: Warehouse },
   { href: '/dashboard/ingresos', label: 'Ingresos', icon: TrendingUp },
@@ -42,6 +44,7 @@ export const BOTTOM_PRIMARY: NavItem[] = [
 
 // Resto de secciones, accesibles desde el menú "Más" en móvil.
 export const MORE_ITEMS: NavItem[] = [
+  { href: '/dashboard/mesas', label: 'Mesas', icon: UtensilsCrossed },
   { href: '/dashboard/inventario', label: 'Productos', icon: Package },
   { href: '/dashboard/insumos', label: 'Inventario', icon: Warehouse },
   { href: '/dashboard/ingresos', label: 'Ingresos', icon: TrendingUp },

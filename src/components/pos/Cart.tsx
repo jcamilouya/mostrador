@@ -1,26 +1,70 @@
 'use client';
 
-import { useState } from 'react';
-import { Trash2, Plus, Minus, ShoppingBag, X } from 'lucide-react';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { Trash2, Plus, Minus, ShoppingBag, X, UtensilsCrossed, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
+import { guardarCuenta } from '@/lib/mesas/actions';
 import { PaymentModal } from './PaymentModal';
 import { ClienteSearch } from './ClienteSearch';
 import type { BrebConfig } from '@/lib/breb/queries';
 
 export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
+  const router = useRouter();
   const items = useCart((s) => s.items);
   const setCantidad = useCart((s) => s.setCantidad);
   const remove = useCart((s) => s.remove);
   const clear = useCart((s) => s.clear);
   const total = useCart((s) => s.total());
   const totalItems = useCart((s) => s.totalItems());
+  const cuentaId = useCart((s) => s.cuentaId);
+  const mesa = useCart((s) => s.mesa);
+  const cliente = useCart((s) => s.cliente);
 
   const [open, setOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  const [guardando, startGuardar] = useTransition();
 
   const empty = items.length === 0;
+
+  /** Deja el pedido abierto en una mesa en vez de cobrarlo ya. */
+  function guardarEnMesa() {
+    const etiqueta = (
+      window.prompt(
+        cuentaId ? 'Nombre de la cuenta' : '¿En qué mesa? (ej: Mesa 4, Para llevar)',
+        mesa ?? '',
+      ) ?? ''
+    ).trim();
+    if (!etiqueta) return;
+
+    startGuardar(async () => {
+      const res = await guardarCuenta({
+        venta_id: cuentaId,
+        mesa: etiqueta,
+        cliente_id: cliente?.id ?? null,
+        items: items.map((i) => ({
+          producto_id: i.producto_id,
+          cantidad: i.cantidad,
+          nombre: i.nombre,
+          variante: i.variante ?? null,
+          insumo_extra_id: i.insumo_extra_id ?? null,
+        })),
+      });
+      if (res.ok) {
+        toast.success(`"${etiqueta}" guardada`, {
+          description: `${formatCOP(res.total)} sin cobrar. La encuentras en Mesas.`,
+        });
+        clear();
+        setOpen(false);
+        router.refresh();
+      } else {
+        toast('No se pudo guardar', { description: res.error });
+      }
+    });
+  }
 
   // Lista de productos + footer con total y botón Cobrar
   // hideHeader: true cuando el sheet tiene su propio título
@@ -32,7 +76,12 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
           <header className="flex shrink-0 items-center justify-between border-b px-4 py-4">
             <div>
               <p className="text-xs text-muted-foreground">{negocio}</p>
-              <h2 className="text-lg font-semibold">Tu venta</h2>
+              <h2 className="text-lg font-semibold">
+                {cuentaId ? mesa : 'Tu venta'}
+              </h2>
+              {cuentaId && (
+                <p className="text-xs text-[var(--utilidad)]">Cuenta abierta · cobra al final</p>
+              )}
             </div>
             {!empty && (
               <button
@@ -117,6 +166,21 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
             onClick={() => setPayOpen(true)}
           >
             Cobrar {!empty && formatCOP(total)}
+          </Button>
+
+          {/* Dejar la cuenta abierta para seguirle agregando (mesas). */}
+          <Button
+            variant="outline"
+            className="h-12 w-full rounded-2xl gap-2"
+            disabled={empty || guardando}
+            onClick={guardarEnMesa}
+          >
+            {guardando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <UtensilsCrossed className="h-4 w-4" />
+            )}
+            {cuentaId ? `Actualizar ${mesa ?? 'la cuenta'}` : 'Guardar en mesa'}
           </Button>
         </div>
 
