@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPlanInfo } from '@/lib/plan/queries';
 import {
+  costosDeReceta,
   descontarIngredientesPorVenta,
   descontarInsumosVendidos,
   descontarStockProductosPorVenta,
@@ -26,7 +27,7 @@ const itemSchema = z.object({
 });
 
 const ventaSchema = z.object({
-  metodo_pago: z.enum(['efectivo', 'breb', 'transferencia', 'mixto']),
+  metodo_pago: z.enum(['efectivo', 'breb', 'transferencia', 'mixto', 'tarjeta']),
   items: z.array(itemSchema).min(1, { error: 'Agrega al menos un producto' }),
   notas: z.string().max(500).optional(),
   // Para Bre-B: true = el dueño ya confirmó el pago en el POS (completa la venta).
@@ -79,12 +80,18 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
     .in('id', prodIds);
   const prodMap = new Map((prods ?? []).map((p) => [p.id, p]));
 
+  // Costo real de los platos con receta: manda sobre `precio_compra`, que en
+  // los preparados suele quedar en 0 e infla la ganancia al 100%.
+  const costosReceta = await costosDeReceta(admin, empresaId, prodIds);
+
   const items = parsed.data.items.map((i) => {
     const p = prodMap.get(i.producto_id);
     let precioUnitario = i.precio_unitario; // fallback si el producto ya no existe
     let precioCompra = i.precio_compra;
     if (p) {
       precioCompra = Number(p.precio_compra) || 0;
+      const costoReceta = costosReceta.get(i.producto_id) ?? 0;
+      if (costoReceta > 0) precioCompra = costoReceta;
       precioUnitario = Number(p.precio_venta) || 0;
       if (i.variante) {
         const v = normalizarVariantes(p.variantes).find((x) => x.nombre === i.variante);
@@ -95,7 +102,20 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
   });
 
   const subtotal = items.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
-  const total = subtotal;
+
+  // Recargo por pagar con tarjeta: el porcentaje lo define el negocio en
+  // Configuración y se calcula AQUÍ, no en el navegador. Se redondea a pesos.
+  let recargo = 0;
+  if (parsed.data.metodo_pago === 'tarjeta') {
+    const { data: emp } = await admin
+      .from('empresas')
+      .select('recargo_tarjeta_pct')
+      .eq('id', empresaId)
+      .maybeSingle();
+    const pct = Number((emp as Record<string, unknown> | null)?.recargo_tarjeta_pct) || 0;
+    if (pct > 0) recargo = Math.round((subtotal * pct) / 100);
+  }
+  const total = subtotal + recargo;
 
   // Bre-B queda pendiente salvo que el dueño confirme el pago en el momento.
   const pendiente = parsed.data.metodo_pago === 'breb' && !parsed.data.confirmado;
@@ -113,6 +133,7 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
   };
   if (parsed.data.cliente_id) ventaInsert.cliente_id = parsed.data.cliente_id;
   if (parsed.data.idempotency_key) ventaInsert.idempotency_key = parsed.data.idempotency_key;
+  if (recargo > 0) ventaInsert.recargo = recargo;
 
   // Insertar venta con idempotencia: reintentar con la misma llave (caída de red)
   // no crea otra venta.
@@ -122,15 +143,24 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
     .select('id, numero_venta, total')
     .single();
 
-  // Si la columna idempotency_key aún no existe (migración 011 sin correr),
+  // Si alguna columna nueva aún no existe (migraciones 011/013 sin correr),
   // reintentar sin ella para no bloquear la venta.
-  if (insertRes.error?.code === '42703' && 'idempotency_key' in ventaInsert) {
+  if (insertRes.error?.code === '42703') {
     delete ventaInsert.idempotency_key;
+    delete ventaInsert.recargo;
     insertRes = await admin
       .from('ventas')
       .insert(ventaInsert)
       .select('id, numero_venta, total')
       .single();
+  }
+
+  // El método `tarjeta` necesita la migración 013: sin ella la BD lo rechaza.
+  if (insertRes.error?.code === '23514' && parsed.data.metodo_pago === 'tarjeta') {
+    return {
+      ok: false,
+      error: 'Para cobrar con tarjeta falta correr la migración 013 en Supabase.',
+    };
   }
 
   if (insertRes.error) {

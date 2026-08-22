@@ -63,6 +63,22 @@ export async function crearInsumo(_prev: InsumoState, formData: FormData): Promi
   const d = parsed.data;
 
   const admin = createAdminClient();
+
+  // Dos fichas con el mismo nombre parten el stock en dos y ninguna cuadra.
+  // Pasó de verdad: "papaya" quedó dos veces con 700 g y 800 g por aparte.
+  const { data: repetido } = await admin
+    .from('insumos')
+    .select('id, nombre')
+    .eq('empresa_id', empresaId)
+    .eq('activo', true)
+    .ilike('nombre', d.nombre)
+    .limit(1);
+  if (repetido && repetido.length > 0) {
+    return {
+      error: `Ya tienes "${repetido[0].nombre}" en tu inventario. Búscalo en la lista y usa el botón de agregar stock (📦) en vez de crearlo otra vez.`,
+    };
+  }
+
   const { data: insumo, error } = await admin
     .from('insumos')
     .insert({

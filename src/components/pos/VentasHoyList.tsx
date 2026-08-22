@@ -7,6 +7,7 @@ const METODO_LABEL: Record<string, string> = {
   efectivo: 'Efectivo',
   breb: 'Bre-B',
   transferencia: 'Transferencia',
+  tarjeta: 'Tarjeta',
   mixto: 'Mixto',
 };
 

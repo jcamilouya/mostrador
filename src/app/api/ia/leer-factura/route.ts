@@ -31,21 +31,32 @@ export async function POST(req: Request) {
     : 'image/jpeg'
   ) as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
 
+  // Sin llave configurada la lectura no puede funcionar: decirlo claro en vez
+  // de reventar con un error técnico en la cara del dueño.
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({
+      ok: false,
+      error: 'La lectura automática no está configurada. Escribe el gasto a mano por ahora.',
+    });
+  }
+
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 1200,
-    messages: [{
-      role: 'user',
-      content: [
-        {
-          type: 'image',
-          source: { type: 'base64', media_type: mediaType, data: base64 },
-        },
-        {
-          type: 'text',
-          text: `Eres un asistente que extrae datos de facturas para un negocio colombiano.
+  let response;
+  try {
+    response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 1200,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: mediaType, data: base64 },
+          },
+          {
+            type: 'text',
+            text: `Eres un asistente que extrae datos de facturas para un negocio colombiano.
 Analiza esta imagen y responde SOLO con un JSON con este formato exacto:
 {
   "proveedor": "nombre del proveedor o empresa",
@@ -63,12 +74,21 @@ Reglas:
 - Si no puedes leer algún campo usa null.
 - "ingredientes": un renglón por cada producto físico/materia prima comprado, con su cantidad. "unidad" DEBE ser una de: "unidad", "g", "kg", "lb", "ml", "L" (elige la que mejor represente lo comprado; si no sabes usa "unidad"). "costo_total" es el precio total de ese renglón (o null si no se ve). Si la factura es de un servicio (arriendo, luz, agua, nómina…) o no tiene productos con cantidades, devuelve "ingredientes": [].
 - Si no es una factura responde: {"error": "no_es_factura"}`,
-        },
-      ],
-    }],
-  });
+          },
+        ],
+      }],
+    });
+  } catch (e) {
+    // La IA se cayó, se demoró o se acabó el saldo. El gasto se puede escribir
+    // a mano: nunca dejar la pantalla rota por esto.
+    console.error('[leer-factura] Anthropic', e);
+    return NextResponse.json({
+      ok: false,
+      error: 'No pudimos leer la foto en este momento. Intenta de nuevo o escribe el gasto a mano.',
+    });
+  }
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text : '';
+  const raw = response.content[0]?.type === 'text' ? response.content[0].text : '';
 
   let datos: Record<string, unknown>;
   try {

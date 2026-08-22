@@ -202,6 +202,36 @@ export async function devolverStockProductosPorVenta(
   }
 }
 
+/**
+ * Costo real de preparar 1 unidad de cada producto con receta
+ * (Σ cantidad × costo del insumo). Se usa como costo de venta: si no, un plato
+ * con `precio_compra` en 0 reporta 100% de ganancia, que fue lo que pasó con
+ * las hamburguesas.
+ */
+export async function costosDeReceta(
+  admin: Admin,
+  empresaId: string,
+  productoIds: string[],
+): Promise<Map<string, number>> {
+  const costos = new Map<string, number>();
+  const ids = [...new Set(productoIds)];
+  if (ids.length === 0) return costos;
+
+  const { data } = await admin
+    .from('producto_receta')
+    .select('producto_id, cantidad, insumos ( costo_unitario )')
+    .eq('empresa_id', empresaId)
+    .in('producto_id', ids);
+
+  for (const r of data ?? []) {
+    const ins = (r as Record<string, unknown>).insumos as Record<string, unknown> | null;
+    const parcial = (Number(r.cantidad) || 0) * (Number(ins?.costo_unitario) || 0);
+    const pid = r.producto_id as string;
+    costos.set(pid, (costos.get(pid) ?? 0) + parcial);
+  }
+  return costos;
+}
+
 /** Suma el consumo de insumos de una lista de items vendidos (insumo_id → cantidad). */
 async function calcularConsumo(
   admin: Admin,

@@ -12,7 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Banknote, QrCode, ArrowLeftRight, CheckCircle2, Loader2, Settings, Copy, Store } from 'lucide-react';
+import { Banknote, QrCode, ArrowLeftRight, CheckCircle2, Loader2, Settings, Copy, Store, CreditCard } from 'lucide-react';
 import { BrebQR } from '@/components/breb/BrebQR';
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
@@ -22,7 +22,7 @@ import { guardarClienteDesdeRecibo } from '@/lib/clientes/actions';
 import type { MetodoPago } from '@/lib/pos/types';
 import type { BrebConfig } from '@/lib/breb/queries';
 
-type Step = 'metodo' | 'efectivo' | 'breb' | 'transferencia' | 'exito' | 'error';
+type Step = 'metodo' | 'efectivo' | 'breb' | 'transferencia' | 'tarjeta' | 'exito' | 'error';
 
 export function PaymentModal({
   open,
@@ -58,6 +58,12 @@ export function PaymentModal({
   const [copiado, setCopiado] = useState(false);
   // Llave única por cobro: si el internet se cae y se reintenta, no se duplica.
   const [idemKey, setIdemKey] = useState('');
+
+  // Recargo por tarjeta. Se muestra aquí para que el cajero sepa cuánto pasar
+  // por el datáfono, pero el monto que se guarda lo recalcula el servidor.
+  const recargoPct = breb.recargoTarjetaPct ?? 0;
+  const recargoTarjeta = recargoPct > 0 ? Math.round((total * recargoPct) / 100) : 0;
+  const totalConRecargo = total + recargoTarjeta;
 
   useEffect(() => {
     if (open) {
@@ -216,6 +222,70 @@ export function PaymentModal({
               color="var(--egreso)"
               onClick={() => setStep('transferencia')}
             />
+            <MetodoButton
+              icon={CreditCard}
+              titulo="Tarjeta"
+              subtitulo={
+                recargoPct > 0
+                  ? `Se le suma el ${recargoPct}% al total`
+                  : 'Débito o crédito en el datáfono'
+              }
+              color="var(--chart-4)"
+              onClick={() => setStep('tarjeta')}
+            />
+          </div>
+        )}
+
+        {step === 'tarjeta' && (
+          <div className="space-y-4">
+            <div className="space-y-2 rounded-2xl bg-secondary/50 p-4 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Productos</span>
+                <span className="tabular-nums">{formatCOP(total)}</span>
+              </div>
+              {recargoTarjeta > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Recargo tarjeta ({recargoPct}%)</span>
+                  <span className="tabular-nums">{formatCOP(recargoTarjeta)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t border-border pt-2 text-base font-semibold">
+                <span>Cóbrale</span>
+                <span className="tabular-nums">{formatCOP(totalConRecargo)}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              {recargoPct > 0 ? (
+                <>
+                  Pasa <strong>{formatCOP(totalConRecargo)}</strong> por el datáfono. El recargo
+                  queda registrado aparte en tus reportes.
+                </>
+              ) : (
+                <>
+                  Pasa <strong>{formatCOP(totalConRecargo)}</strong> por el datáfono. Si quieres
+                  cobrar un porcentaje extra por tarjeta, actívalo en Configuración.
+                </>
+              )}
+            </p>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 rounded-2xl"
+                onClick={() => setStep('metodo')}
+              >
+                Atrás
+              </Button>
+              <Button
+                className="flex-1 rounded-2xl gap-2"
+                disabled={pending}
+                onClick={() => confirmar('tarjeta')}
+              >
+                {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                Cobrado
+              </Button>
+            </div>
           </div>
         )}
 

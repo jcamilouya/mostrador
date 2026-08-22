@@ -9,6 +9,7 @@ const ETIQUETA: Record<string, string> = {
   efectivo: 'Efectivo',
   breb: 'Bre-B',
   transferencia: 'Transferencia',
+  tarjeta: 'Tarjeta',
   mixto: 'Mixto',
 };
 
@@ -16,6 +17,7 @@ const COLORES: Record<string, string> = {
   efectivo: 'var(--ingreso)',
   breb: 'var(--utilidad)',
   transferencia: 'var(--egreso)',
+  tarjeta: 'var(--chart-4)',
   mixto: 'var(--muted-foreground)',
 };
 

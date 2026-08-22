@@ -3,11 +3,12 @@
 import { useActionState, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import jsQR from 'jsqr';
-import { Store, QrCode, Loader2, Check, Info, Upload } from 'lucide-react';
+import { Store, QrCode, Loader2, Check, Info, Upload, CreditCard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BrebQR } from '@/components/breb/BrebQR';
+import { formatCOP } from '@/lib/utils/format';
 import { guardarConfiguracion, type ConfigState } from '@/lib/breb/actions';
 import { validarPayloadEmv } from '@/lib/breb/emv';
 import { BANCOS_COLOMBIA } from '@/lib/breb/schemas';
@@ -72,6 +73,7 @@ export function ConfigForm({
     {},
   );
   const [nombre, setNombre] = useState(empresa.nombre);
+  const [recargoTarjeta, setRecargoTarjeta] = useState(String(breb.recargoTarjetaPct ?? 0));
   const [llave, setLlave] = useState(breb.llave ?? '');
 
   // QR oficial del negocio (payload EMVCo decodificado de la imagen que sube).
@@ -149,6 +151,45 @@ export function ConfigForm({
               className="rounded-xl h-11"
             />
           </div>
+        </div>
+      </section>
+
+      {/* Cobro con tarjeta */}
+      <section className="rounded-3xl bg-card p-5 shadow-sm">
+        <header className="mb-4 flex items-center gap-2">
+          <CreditCard className="h-4 w-4 text-muted-foreground" />
+          <h2 className="font-semibold">Cobro con tarjeta</h2>
+        </header>
+
+        <div className="max-w-md space-y-2">
+          <Label htmlFor="recargo_tarjeta_pct">Recargo por pagar con tarjeta</Label>
+          <div className="relative w-40">
+            <Input
+              id="recargo_tarjeta_pct"
+              name="recargo_tarjeta_pct"
+              type="number"
+              step="0.5"
+              min="0"
+              max="20"
+              value={recargoTarjeta}
+              onChange={(e) => setRecargoTarjeta(e.target.value)}
+              className="rounded-xl h-11 tabular-nums pr-8"
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+              %
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Déjalo en <strong>0</strong> si cobras lo mismo con tarjeta que en efectivo. Si
+            pones un número, el POS le suma ese porcentaje al total cuando el cliente paga con
+            tarjeta, y queda registrado aparte en tus reportes.
+          </p>
+          {Number(recargoTarjeta) > 0 && (
+            <p className="rounded-xl bg-[var(--utilidad)]/10 p-3 text-xs">
+              Con {recargoTarjeta}%, una venta de {formatCOP(50000)} se le cobra al cliente{' '}
+              <strong>{formatCOP(50000 + Math.round((50000 * Number(recargoTarjeta)) / 100))}</strong>.
+            </p>
+          )}
         </div>
       </section>
 

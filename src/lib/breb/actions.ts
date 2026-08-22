@@ -45,20 +45,32 @@ export async function guardarConfiguracion(
   }
   const d = parsed.data;
 
+  // Recargo por tarjeta: entre 0 y 20%, en pasos de lo que escriba el negocio.
+  const recargoBruto = Number(formData.get('recargo_tarjeta_pct') ?? 0);
+  const recargoTarjeta = Number.isFinite(recargoBruto)
+    ? Math.min(20, Math.max(0, recargoBruto))
+    : 0;
+
   const admin = createAdminClient();
-  const { error } = await admin
-    .from('empresas')
-    .update({
-      nombre: d.nombre,
-      telefono: d.telefono || null,
-      direccion: d.direccion || null,
-      breb_llave: d.breb_llave || null,
-      breb_banco: d.breb_banco || null,
-      breb_merchant_id: d.breb_merchant_id || null,
-      breb_qr_payload: d.breb_qr_payload || null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', empresaId);
+  const cambios: Record<string, unknown> = {
+    nombre: d.nombre,
+    telefono: d.telefono || null,
+    direccion: d.direccion || null,
+    breb_llave: d.breb_llave || null,
+    breb_banco: d.breb_banco || null,
+    breb_merchant_id: d.breb_merchant_id || null,
+    breb_qr_payload: d.breb_qr_payload || null,
+    recargo_tarjeta_pct: recargoTarjeta,
+    updated_at: new Date().toISOString(),
+  };
+
+  let { error } = await admin.from('empresas').update(cambios).eq('id', empresaId);
+
+  // Sin la migración 013 la columna del recargo no existe: guardar el resto.
+  if (error?.code === '42703') {
+    delete cambios.recargo_tarjeta_pct;
+    ({ error } = await admin.from('empresas').update(cambios).eq('id', empresaId));
+  }
 
   if (error) return { error: 'No pudimos guardar los cambios. Intenta de nuevo.' };
 
