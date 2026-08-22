@@ -5,26 +5,52 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { UtensilsCrossed, Clock, Plus, Trash2, ArrowRight, Loader2 } from 'lucide-react';
+import { UtensilsCrossed, Clock, Plus, Trash2, Loader2, Receipt } from 'lucide-react';
 import { anularCuenta } from '@/lib/mesas/actions';
 import type { CuentaAbierta } from '@/lib/mesas/queries';
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
 
-/** "hace 25 min", "hace 2 h" — lo que un mesero necesita saber de un vistazo. */
-function desdeHace(iso: string): string {
-  const min = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+/** Minutos que lleva abierta la cuenta. */
+function minutosAbierta(iso: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+}
+
+function textoTiempo(min: number): string {
   if (min < 1) return 'recién abierta';
-  if (min < 60) return `hace ${min} min`;
+  if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);
-  return `hace ${h} h ${min % 60 > 0 ? `${min % 60} min` : ''}`.trim();
+  const resto = min % 60;
+  return resto > 0 ? `${h} h ${resto} min` : `${h} h`;
+}
+
+/**
+ * Color por tiempo: verde recién sentados, ámbar ya llevan rato, rojo llevan
+ * demasiado. De un vistazo el dueño ve a qué mesa hay que ir.
+ */
+function colorTiempo(min: number): { texto: string; punto: string; borde: string } {
+  if (min < 20) {
+    return {
+      texto: 'text-[var(--ingreso)]',
+      punto: 'bg-[var(--ingreso)]',
+      borde: 'var(--ingreso)',
+    };
+  }
+  if (min < 60) {
+    return {
+      texto: 'text-[var(--utilidad)]',
+      punto: 'bg-[var(--utilidad)]',
+      borde: 'var(--utilidad)',
+    };
+  }
+  return { texto: 'text-[var(--egreso)]', punto: 'bg-[var(--egreso)]', borde: 'var(--egreso)' };
 }
 
 export function MesasManager({ cuentas }: { cuentas: CuentaAbierta[] }) {
   const router = useRouter();
   const cargarCuenta = useCart((s) => s.cargarCuenta);
   const [anulando, setAnulando] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   /** Lleva la cuenta al POS para seguirle agregando o cobrarla. */
   function abrir(cuenta: CuentaAbierta) {
@@ -65,82 +91,126 @@ export function MesasManager({ cuentas }: { cuentas: CuentaAbierta[] }) {
   }
 
   const totalAbierto = cuentas.reduce((acc, c) => acc + c.total, 0);
+  const platos = cuentas.reduce(
+    (acc, c) => acc + c.items.reduce((a, i) => a + i.cantidad, 0),
+    0,
+  );
+
+  if (cuentas.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-5 rounded-3xl bg-card px-6 py-14 text-center shadow-sm">
+        <span className="flex h-20 w-20 items-center justify-center rounded-3xl bg-secondary">
+          <UtensilsCrossed className="h-9 w-9 text-muted-foreground" />
+        </span>
+        <div className="space-y-1.5">
+          <p className="text-lg font-semibold">No hay mesas abiertas</p>
+          <p className="mx-auto max-w-xs text-sm text-muted-foreground">
+            Arma el pedido en Vender y toca <strong>Guardar en mesa</strong>. Aquí lo ves
+            crecer y lo cobras cuando el cliente pida la cuenta.
+          </p>
+        </div>
+        <Link href="/dashboard/pos">
+          <Button size="lg" className="h-12 rounded-2xl gap-2">
+            <Plus className="h-4 w-4" /> Abrir una mesa
+          </Button>
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {cuentas.length > 0 ? (
-          <p className="text-sm text-muted-foreground">
-            <strong className="text-foreground">{cuentas.length}</strong> cuenta
-            {cuentas.length === 1 ? '' : 's'} abierta{cuentas.length === 1 ? '' : 's'} ·{' '}
-            <strong className="text-foreground tabular-nums">{formatCOP(totalAbierto)}</strong> sin
-            cobrar
+    <div className="space-y-5">
+      {/* Resumen del salón */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-3xl bg-card p-4 shadow-sm">
+          <p className="text-xs text-muted-foreground">Mesas abiertas</p>
+          <p className="text-2xl font-semibold tabular-nums">{cuentas.length}</p>
+        </div>
+        <div className="rounded-3xl bg-card p-4 shadow-sm">
+          <p className="text-xs text-muted-foreground">Platos servidos</p>
+          <p className="text-2xl font-semibold tabular-nums">{platos}</p>
+        </div>
+        <div className="rounded-3xl bg-[var(--utilidad)]/10 p-4 shadow-sm">
+          <p className="text-xs text-muted-foreground">Sin cobrar</p>
+          <p className="text-2xl font-semibold tabular-nums text-[var(--utilidad)]">
+            {formatCOP(totalAbierto)}
           </p>
-        ) : (
-          <span />
-        )}
+        </div>
+      </div>
+
+      <div className="flex justify-end">
         <Link href="/dashboard/pos">
-          <Button className="rounded-2xl gap-2">
-            <Plus className="h-4 w-4" /> Abrir una cuenta
+          <Button className="h-11 rounded-2xl gap-2">
+            <Plus className="h-4 w-4" /> Abrir otra mesa
           </Button>
         </Link>
       </div>
 
-      {cuentas.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-3xl bg-card p-10 text-center shadow-sm">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary">
-            <UtensilsCrossed className="h-6 w-6 text-muted-foreground" />
-          </span>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            No tienes cuentas abiertas. En el POS, arma el pedido y toca{' '}
-            <strong>Guardar en mesa</strong> para dejarlo abierto y cobrarlo después.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {cuentas.map((c) => (
-            <div key={c.id} className="flex flex-col gap-3 rounded-3xl bg-card p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-lg font-semibold">{c.mesa}</p>
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    {desdeHace(c.abiertaDesde)} · #{c.numero_venta}
+      {/* El salón */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        {cuentas.map((c) => {
+          const min = minutosAbierta(c.abiertaDesde);
+          const color = colorTiempo(min);
+          const unidades = c.items.reduce((a, i) => a + i.cantidad, 0);
+          const ocupada = anulando === c.id;
+
+          return (
+            <div
+              key={c.id}
+              className="group relative flex flex-col overflow-hidden rounded-3xl bg-card shadow-sm transition-transform hover:scale-[1.01]"
+              style={{ borderTop: `4px solid ${color.borde}` }}
+            >
+              <button
+                type="button"
+                onClick={() => abrir(c)}
+                disabled={ocupada}
+                className="flex flex-1 flex-col gap-3 p-5 text-left"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 flex-1 break-words text-xl font-semibold leading-tight">
+                    {c.mesa}
                   </p>
+                  <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+                    #{c.numero_venta}
+                  </span>
                 </div>
-                <p className="shrink-0 text-lg font-semibold tabular-nums">
-                  {formatCOP(c.total)}
-                </p>
-              </div>
 
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                {c.items.slice(0, 4).map((i, idx) => (
-                  <li key={idx} className="flex justify-between gap-2">
-                    <span className="truncate">
+                <p className="text-3xl font-bold tabular-nums">{formatCOP(c.total)}</p>
+
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span className={`inline-flex items-center gap-1.5 font-medium ${color.texto}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${color.punto}`} />
+                    <Clock className="h-3 w-3" />
+                    {textoTiempo(min)}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-muted-foreground">
+                    <Receipt className="h-3 w-3" />
+                    {unidades} {unidades === 1 ? 'ítem' : 'ítems'}
+                  </span>
+                </div>
+
+                <ul className="mt-auto space-y-0.5 text-xs text-muted-foreground">
+                  {c.items.slice(0, 3).map((i, idx) => (
+                    <li key={idx} className="truncate">
                       {i.cantidad}× {i.nombre_producto}
-                    </span>
-                    <span className="shrink-0 tabular-nums">
-                      {formatCOP(i.cantidad * i.precio_unitario)}
-                    </span>
-                  </li>
-                ))}
-                {c.items.length > 4 && (
-                  <li className="text-xs">y {c.items.length - 4} más…</li>
-                )}
-              </ul>
+                    </li>
+                  ))}
+                  {c.items.length > 3 && <li>y {c.items.length - 3} más…</li>}
+                </ul>
+              </button>
 
-              <div className="mt-auto flex gap-2 pt-1">
-                <Button onClick={() => abrir(c)} className="flex-1 rounded-2xl gap-1.5">
-                  Abrir <ArrowRight className="h-4 w-4" />
-                </Button>
+              <div className="flex items-center gap-2 border-t border-border px-3 py-2">
+                <span className="flex-1 text-center text-sm font-medium text-muted-foreground">
+                  Toca para cobrar o agregar
+                </span>
                 <button
                   type="button"
                   onClick={() => anular(c)}
-                  disabled={pending && anulando === c.id}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-[var(--egreso)]"
+                  disabled={ocupada}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-[var(--egreso)]"
                   aria-label={`Anular cuenta de ${c.mesa}`}
                 >
-                  {pending && anulando === c.id ? (
+                  {ocupada ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Trash2 className="h-4 w-4" />
@@ -148,9 +218,9 @@ export function MesasManager({ cuentas }: { cuentas: CuentaAbierta[] }) {
                 </button>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }

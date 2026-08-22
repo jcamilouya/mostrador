@@ -150,3 +150,35 @@
     @apply font-sans antialiased;
   }
 }
+
+/* ── Confirmación de "vendido" en el POS ─────────────────────────────
+   El dueño necesita ver de lejos, en medio del servicio, que la venta
+   quedó. El sello entra de golpe y una onda sale del círculo. */
+@keyframes vendido-sello {
+  0%   { transform: scale(0.3) rotate(-12deg); opacity: 0; }
+  55%  { transform: scale(1.12) rotate(3deg);  opacity: 1; }
+  75%  { transform: scale(0.96) rotate(-1deg); }
+  100% { transform: scale(1) rotate(0deg);     opacity: 1; }
+}
+@keyframes vendido-onda {
+  0%   { transform: scale(0.8); opacity: 0.55; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+@keyframes vendido-texto {
+  0%   { transform: translateY(8px); opacity: 0; }
+  100% { transform: translateY(0);   opacity: 1; }
+}
+
+.vendido-sello { animation: vendido-sello 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.vendido-onda  { animation: vendido-onda 0.9s ease-out 0.15s both; }
+.vendido-texto { animation: vendido-texto 0.4s ease-out 0.25s both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vendido-sello,
+  .vendido-onda,
+  .vendido-texto {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
 import { guardarCuenta } from '@/lib/mesas/actions';
+import { MesaPicker } from '@/components/mesas/MesaPicker';
 import { PaymentModal } from './PaymentModal';
 import { ClienteSearch } from './ClienteSearch';
 import type { BrebConfig } from '@/lib/breb/queries';
@@ -26,18 +27,13 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
 
   const [open, setOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  const [mesaPicker, setMesaPicker] = useState(false);
   const [guardando, startGuardar] = useTransition();
 
   const empty = items.length === 0;
 
   /** Deja el pedido abierto en una mesa en vez de cobrarlo ya. */
-  function guardarEnMesa() {
-    const etiqueta = (
-      window.prompt(
-        cuentaId ? 'Nombre de la cuenta' : '¿En qué mesa? (ej: Mesa 4, Para llevar)',
-        mesa ?? '',
-      ) ?? ''
-    ).trim();
+  function guardarEnMesa(etiqueta: string) {
     if (!etiqueta) return;
 
     startGuardar(async () => {
@@ -59,6 +55,7 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
         });
         clear();
         setOpen(false);
+        setMesaPicker(false);
         router.refresh();
       } else {
         toast('No se pudo guardar', { description: res.error });
@@ -173,7 +170,7 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
             variant="outline"
             className="h-12 w-full rounded-2xl gap-2"
             disabled={empty || guardando}
-            onClick={guardarEnMesa}
+            onClick={() => setMesaPicker(true)}
           >
             {guardando ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -184,24 +181,41 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
           </Button>
         </div>
 
-        <PaymentModal
-          open={payOpen}
-          breb={breb}
-          onClose={() => setPayOpen(false)}
-          onSuccess={() => {
-            setPayOpen(false);
-            setOpen(false);
-          }}
-        />
       </div>
     );
   }
 
   return (
     <>
+      {/*
+        El modal de cobro se monta UNA sola vez y FUERA de CartBody. Antes vivía
+        dentro, y como CartBody se vuelve a crear en cada render del carrito,
+        React lo desmontaba y lo volvía a montar: al terminar una venta el
+        carrito se vaciaba, eso re-renderizaba, y el modal reaparecía desde cero
+        en el paso "elige método" con total $0. Además se montaba dos veces (una
+        en el panel de escritorio y otra en el de celular).
+      */}
+      <PaymentModal
+        open={payOpen}
+        breb={breb}
+        onClose={() => setPayOpen(false)}
+        onSuccess={() => {
+          setPayOpen(false);
+          setOpen(false);
+        }}
+      />
+
+      <MesaPicker
+        open={mesaPicker}
+        valorInicial={mesa}
+        guardando={guardando}
+        onCancel={() => setMesaPicker(false)}
+        onConfirm={guardarEnMesa}
+      />
+
       {/* ── Desktop: sidebar fijo al lado derecho ── */}
       <aside className="hidden lg:flex lg:w-96 lg:flex-col lg:border-l lg:bg-sidebar">
-        <CartBody />
+        {CartBody({})}
       </aside>
 
       {/* ── Mobile: barra sticky — solo cuando hay productos ── */}
@@ -273,7 +287,7 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
 
             {/* Body del carrito ocupa el resto */}
             <div className="flex flex-1 min-h-0 flex-col">
-              <CartBody hideHeader />
+              {CartBody({ hideHeader: true })}
             </div>
           </div>
         </div>

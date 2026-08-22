@@ -208,14 +208,28 @@ export function PaymentModal({
         <DialogHeader>
           <DialogTitle>
             {step === 'exito'
-              ? '¡Venta realizada! 🎉'
+              ? `Venta #${numeroVenta}`
               : step === 'error'
                 ? 'Algo salió mal'
                 : `Cobrar ${formatCOP(total)}`}
           </DialogTitle>
         </DialogHeader>
 
-        {step === 'metodo' && (
+        {/* Malla de seguridad: cobrar un carrito vacío no significa nada. Si por
+            cualquier motivo el modal queda abierto sin productos, se dice claro
+            en vez de mostrar "Cobrar $ 0" con la lista de métodos. */}
+        {step === 'metodo' && items.length === 0 && (
+          <div className="space-y-4 py-2 text-center">
+            <p className="text-sm text-muted-foreground">
+              El carrito está vacío. Agrega productos y vuelve a tocar Cobrar.
+            </p>
+            <Button className="w-full rounded-2xl" onClick={onClose}>
+              Entendido
+            </Button>
+          </div>
+        )}
+
+        {step === 'metodo' && items.length > 0 && (
           <div className="space-y-2">
             <MetodoButton
               icon={Banknote}
@@ -508,25 +522,45 @@ export function PaymentModal({
 
         {step === 'exito' && (
           <div className="space-y-4 text-center">
-            <div
-              className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${
-                fuePendiente ? 'bg-[var(--utilidad)]/15' : 'bg-[var(--ingreso)]/15'
-              }`}
-            >
-              <CheckCircle2
-                className={`h-8 w-8 ${
+            {/* Sello grande: se ve de lejos, en medio del servicio. */}
+            <div className="relative mx-auto flex h-24 w-24 items-center justify-center">
+              <span
+                className={`vendido-onda absolute inset-0 rounded-full ${
+                  fuePendiente ? 'bg-[var(--utilidad)]/40' : 'bg-[var(--ingreso)]/40'
+                }`}
+                aria-hidden="true"
+              />
+              <span
+                className={`vendido-sello relative flex h-24 w-24 items-center justify-center rounded-full ${
+                  fuePendiente ? 'bg-[var(--utilidad)]/15' : 'bg-[var(--ingreso)]/15'
+                }`}
+              >
+                <CheckCircle2
+                  className={`h-12 w-12 ${
+                    fuePendiente ? 'text-[var(--utilidad)]' : 'text-[var(--ingreso)]'
+                  }`}
+                  strokeWidth={2.5}
+                />
+              </span>
+            </div>
+
+            <div className="vendido-texto space-y-1">
+              <p
+                className={`text-3xl font-bold tracking-tight ${
                   fuePendiente ? 'text-[var(--utilidad)]' : 'text-[var(--ingreso)]'
                 }`}
-              />
+              >
+                {fuePendiente ? 'Pendiente' : '¡Vendido!'}
+              </p>
+              <p className="text-2xl font-semibold tabular-nums">
+                {reciboData ? formatCOP(reciboData.total) : formatCOP(total)}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {fuePendiente
+                  ? `Venta #${numeroVenta} quedó pendiente. Confírmala desde "Ventas de hoy" cuando recibas el pago.`
+                  : `Venta #${numeroVenta} registrada. Ya puedes seguir con la siguiente.`}
+              </p>
             </div>
-            <p className="text-2xl font-semibold tabular-nums">
-              {reciboData ? formatCOP(reciboData.total) : formatCOP(total)}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {fuePendiente
-                ? `Venta #${numeroVenta} quedó pendiente. Confírmala desde "Ventas de hoy" cuando recibas el pago.`
-                : `¡Gracias! Venta #${numeroVenta} realizada. 💪`}
-            </p>
 
             {/* Recibo por WhatsApp — sin API de Meta, abre wa.me en el celular */}
             {reciboData && (
