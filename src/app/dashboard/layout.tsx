@@ -29,7 +29,7 @@ export default async function DashboardLayout({
         <PlanBanner plan={plan} />
         <main className="flex-1 px-4 py-6 lg:px-8 lg:py-8">{children}</main>
       </div>
-      <BottomNav esAdmin={esAdmin} />
+      <BottomNav esAdmin={esAdmin} categoria={sesion.empresaCategoria} />
     </div>
   );
 }

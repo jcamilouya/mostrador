@@ -808,7 +808,7 @@ export function ProductForm({
                         onChange={() => toggleVarianteBebida(idx)}
                         className="h-3.5 w-3.5 rounded border-border"
                       />
-                      🥤 Al vender esta opción se elige la bebida (se descuenta del Inventario)
+                      🥤 Al vender esta opción se elige la bebida (se descuenta de Ingredientes)
                     </label>
                   </div>
                 ))}
@@ -840,7 +840,7 @@ export function ProductForm({
               <span>
                 🥤 <strong>Este producto (opción &quot;Sencillo&quot;) incluye bebida a elegir.</strong>{' '}
                 <span className="text-xs text-muted-foreground">
-                  Al venderlo, el POS pregunta cuál bebida del Inventario y la descuenta.
+                  Al venderlo, el POS pregunta cuál bebida de Ingredientes y la descuenta.
                 </span>
               </span>
             </label>
@@ -959,11 +959,11 @@ export function ProductForm({
           </div>
 
           <div className="rounded-3xl bg-card p-6 shadow-sm space-y-4">
-            <h2 className="font-semibold">Inventario</h2>
+            <h2 className="font-semibold">Cuántos tienes</h2>
             {producto?.insumo_id ? (
               <p className="text-sm text-muted-foreground">
                 🥤 El stock de este producto se controla desde{' '}
-                <strong>Inventario → Bebidas</strong>. Es el mismo stock: al reponer inventario o
+                <strong>Ingredientes → Bebidas</strong>. Es el mismo stock: al reponer o
                 vender, se sincroniza solo.
               </p>
             ) : sePrepara ? (

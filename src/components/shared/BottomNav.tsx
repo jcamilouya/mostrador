@@ -4,21 +4,23 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { MoreHorizontal, X, ShieldCheck } from 'lucide-react';
-import { BOTTOM_PRIMARY, MORE_ITEMS } from './NavItems';
+import { bottomPrimary, moreItems } from './NavItems';
 import { SignOutButton } from './SignOutButton';
 import { ThemeToggle } from './ThemeToggle';
 
-export function BottomNav({ esAdmin }: { esAdmin?: boolean }) {
+export function BottomNav({ esAdmin, categoria }: { esAdmin?: boolean; categoria?: string | null }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const moreActivo = MORE_ITEMS.some((i) => pathname.startsWith(i.href));
+  const PRIMARY = bottomPrimary(categoria);
+  const MAS = moreItems(categoria);
+  const moreActivo = MAS.some((i) => pathname.startsWith(i.href));
 
   return (
     <>
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t bg-background/95 px-1 pt-2 backdrop-blur lg:hidden" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
         <ul className="flex items-stretch justify-around gap-0.5">
-          {BOTTOM_PRIMARY.map((item) => {
+          {PRIMARY.map((item) => {
             const Icon = item.icon;
             const active =
               item.href === '/dashboard'
@@ -73,7 +75,7 @@ export function BottomNav({ esAdmin }: { esAdmin?: boolean }) {
             </div>
 
             <div className="grid grid-cols-1 gap-1">
-              {MORE_ITEMS.map((item) => {
+              {MAS.map((item) => {
                 const Icon = item.icon;
                 const active = pathname.startsWith(item.href);
                 return (

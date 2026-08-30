@@ -104,8 +104,8 @@ export function InsumosManager({
 
       {bajos > 0 && (
         <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--egreso)]">
-          <AlertTriangle className="h-4 w-4" /> {bajos} ítem{bajos === 1 ? '' : 's'} por agotarse en tu
-          inventario
+          <AlertTriangle className="h-4 w-4" /> {bajos} ingrediente{bajos === 1 ? '' : 's'} por
+          agotarse
         </p>
       )}
 
@@ -556,7 +556,7 @@ function ConectarForm({
 
       <div className="grid grid-cols-2 gap-2 text-center">
         <div className="rounded-2xl bg-card p-3 shadow-sm">
-          <p className="text-[11px] text-muted-foreground">En Inventario</p>
+          <p className="text-[11px] text-muted-foreground">En Ingredientes</p>
           <p className="text-lg font-semibold tabular-nums">
             {formatCantidad(stockInsumo, unidad)}
           </p>

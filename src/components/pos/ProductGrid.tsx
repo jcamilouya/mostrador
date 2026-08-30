@@ -293,7 +293,7 @@ export function ProductGrid({
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">
                 {pasoBebida.opcion ? `${picker.nombre} · ${pasoBebida.opcion.nombre}` : picker.nombre}
-                {' — '}elige la bebida (se descuenta del Inventario):
+                {' — '}elige la bebida (se descuenta de Ingredientes):
               </p>
               <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
                 {bebidas.map((b) => (

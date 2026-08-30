@@ -142,7 +142,10 @@ export default async function DashboardHome() {
 
         <div className="rounded-3xl bg-card p-5 shadow-sm">
           <header className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Inventario</h2>
+            {/* Esta tarjeta se llamaba "Inventario" pero lleva a Productos, y en
+                el menú "Inventario" era otra pantalla distinta: quien buscaba
+                inventario llegaba a dos sitios según de dónde leyera. */}
+            <h2 className="font-semibold">Productos</h2>
             <Link
               href="/dashboard/inventario"
               className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
@@ -152,7 +155,7 @@ export default async function DashboardHome() {
           </header>
           {stats.productosStockBajo === 0 ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
-              Todo tu inventario tiene buen stock. 👌
+              Todos tus productos tienen buen stock. 👌
             </p>
           ) : (
             <div className="flex items-center gap-3 rounded-2xl bg-[var(--utilidad)]/10 p-4">
