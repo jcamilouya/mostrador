@@ -192,7 +192,10 @@ export async function actualizarProducto(
     categoria_id: parsed.data.categoria_id || null,
     precio_compra: parsed.data.precio_compra,
     precio_venta: parsed.data.precio_venta,
-    activo: parsed.data.activo !== false && parsed.data.activo !== 'off',
+    // OJO: `activo` NO se toca aquí. El formulario no tiene ese campo, así que
+    // `formData.get('activo')` siempre era null y "null !== 'off'" daba true:
+    // editar un producto archivado lo revivía solo y reaparecía en el POS.
+    // Archivar/restaurar tiene sus propias acciones.
     variantes: parsed.data.variantes,
     pide_bebida: parsed.data.pide_bebida,
     updated_at: new Date().toISOString(),

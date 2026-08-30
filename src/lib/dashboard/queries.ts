@@ -38,13 +38,14 @@ export async function getDashboardStats(empresaId: string): Promise<DashboardSta
       .select('monto')
       .eq('empresa_id', empresaId)
       .eq('fecha', hoyDate),
-    // Solo lo COBRADO. Una mesa abierta todavía no es plata que entró, y una
-    // anulada no entró nunca: ninguna de las dos puede figurar como ingreso.
+    // Solo lo COBRADO, y con el mismo criterio que los KPI de arriba. Antes
+    // entraban también las 'pendiente' (Bre-B sin confirmar) y se pintaban en
+    // verde con "+", así que la lista y el total del día se contradecían.
     supabase
       .from('ventas')
       .select('id, numero_venta, total, metodo_pago, created_at')
       .eq('empresa_id', empresaId)
-      .in('estado', ['completada', 'pendiente'])
+      .eq('estado', 'completada')
       .order('created_at', { ascending: false })
       .limit(5),
     // Stock efectivo: las bebidas conectadas cuentan el stock del Inventario.

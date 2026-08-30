@@ -47,7 +47,12 @@ export function InventoryList({
     });
   }, [productos, query, categoriaFiltro]);
 
-  const stockBajo = filtrados.filter((p) => p.stock_actual <= p.stock_minimo).length;
+  // Los platos con receta se guardan con stock 0, así que "0 <= 0" los contaba a
+  // todos como agotados: el Inicio decía que todo bien y esta pantalla que había
+  // 10 productos sin stock. Dos verdades distintas del mismo dato.
+  const stockBajo = filtrados.filter(
+    (p) => !recetas[p.id] && p.stock_actual <= p.stock_minimo,
+  ).length;
 
   return (
     <div className="space-y-4">

@@ -1,7 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Search, Package, Layers, CupSoda, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+import { Search, Package, Layers, CupSoda, ArrowLeft, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Dialog,
@@ -128,9 +130,41 @@ export function ProductGrid({
         ))}
       </div>
 
-      {filtrados.length === 0 ? (
-        <div className="rounded-2xl bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
-          No hay productos con esos filtros.
+      {productos.length === 0 ? (
+        /* Sin NINGÚN producto cargado: es la primera pantalla de todo dueño
+           nuevo. Antes decía "no hay productos con esos filtros" sin filtros
+           puestos y sin salida — el peor callejón de la app. */
+        <div className="flex flex-col items-center gap-4 rounded-3xl bg-card px-6 py-12 text-center shadow-sm">
+          <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary text-3xl">
+            🍽️
+          </span>
+          <div className="space-y-1.5">
+            <p className="text-lg font-semibold">Todavía no tienes qué vender</p>
+            <p className="mx-auto max-w-xs text-sm text-muted-foreground">
+              Carga lo que vendes con su precio y aparecerá aquí para tocarlo y cobrarlo.
+            </p>
+          </div>
+          <Link href="/dashboard/inventario/nuevo">
+            <Button size="lg" className="h-12 rounded-2xl gap-2">
+              <Plus className="h-4 w-4" /> Agregar mi primer producto
+            </Button>
+          </Link>
+        </div>
+      ) : filtrados.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-3xl bg-card px-6 py-10 text-center shadow-sm">
+          <p className="text-sm text-muted-foreground">
+            Ningún producto coincide con lo que buscas.
+          </p>
+          <Button
+            variant="outline"
+            className="rounded-2xl"
+            onClick={() => {
+              setQuery('');
+              setCatFiltro('todas');
+            }}
+          >
+            Ver todos
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">

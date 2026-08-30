@@ -32,25 +32,43 @@ export async function crearEmpresa(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
   }
-  const { nombre_negocio, email, nit, direccion, telefono, whatsapp_numero } = parsed.data;
+  const { nombre_negocio, email, nit, direccion, telefono, whatsapp_numero, categoria } =
+    parsed.data;
 
   // 3. Mutaciones con admin (RLS bypass). Seguro: ya validamos el user arriba.
   const admin = createAdminClient();
 
-  const { data: empresa, error: empresaError } = await admin
+  // El tipo de negocio SÍ se guarda: es lo que permite arrancar a un restaurante
+  // con sus categorías y ejemplos, en vez de dejarlo en una pantalla vacía.
+  // Antes se preguntaba y se botaba.
+  const filaEmpresa: Record<string, unknown> = {
+    nombre: nombre_negocio,
+    email,
+    nit: nit || null,
+    direccion: direccion || null,
+    telefono: telefono || null,
+    whatsapp_numero: whatsapp_numero || null,
+    categoria: categoria || null,
+    plan: 'trial',
+    plan_expira_en: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  };
+
+  let { data: empresa, error: empresaError } = await admin
     .from('empresas')
-    .insert({
-      nombre: nombre_negocio,
-      email,
-      nit: nit || null,
-      direccion: direccion || null,
-      telefono: telefono || null,
-      whatsapp_numero: whatsapp_numero || null,
-      plan: 'trial',
-      plan_expira_en: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    })
+    .insert(filaEmpresa)
     .select('id')
     .single();
+
+  // Sin la migración 015 la columna no existe: reintentar sin ella para no
+  // bloquear el registro de un negocio nuevo.
+  if (empresaError?.code === '42703') {
+    delete filaEmpresa.categoria;
+    ({ data: empresa, error: empresaError } = await admin
+      .from('empresas')
+      .insert(filaEmpresa)
+      .select('id')
+      .single());
+  }
 
   if (empresaError || !empresa) {
     if (empresaError?.code === '23505') {

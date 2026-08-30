@@ -17,7 +17,12 @@ type CartState = {
   remove: (lineId: string) => void;
   setCliente: (cliente: ClienteSel | null) => void;
   /** Carga una cuenta abierta en el carrito para seguirle agregando. */
-  cargarCuenta: (cuenta: { id: string; mesa: string; items: CartItem[] }) => void;
+  cargarCuenta: (cuenta: {
+    id: string;
+    mesa: string;
+    items: CartItem[];
+    cliente?: ClienteSel | null;
+  }) => void;
   setMesa: (mesa: string | null) => void;
   clear: () => void;
   total: () => number;
@@ -83,8 +88,15 @@ export const useCart = create<CartState>((set, get) => ({
   remove: (lineId) =>
     set((state) => ({ items: state.items.filter((i) => i.lineId !== lineId) })),
   setCliente: (cliente) => set({ cliente }),
+  // El cliente viaja con la cuenta: si se perdiera aquí, al volver a guardar la
+  // mesa se sobreescribiría con null y la compra nunca llegaría a su historial.
   cargarCuenta: (cuenta) =>
-    set({ items: cuenta.items, cuentaId: cuenta.id, mesa: cuenta.mesa, cliente: null }),
+    set({
+      items: cuenta.items,
+      cuentaId: cuenta.id,
+      mesa: cuenta.mesa,
+      cliente: cuenta.cliente ?? null,
+    }),
   setMesa: (mesa) => set({ mesa }),
   clear: () => set({ items: [], cliente: null, cuentaId: null, mesa: null }),
   total: () => get().items.reduce((acc, i) => acc + i.cantidad * i.precio_venta, 0),

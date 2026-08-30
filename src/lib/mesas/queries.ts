@@ -15,6 +15,8 @@ export type CuentaAbierta = {
   mesa: string;
   total: number;
   abiertaDesde: string;
+  /** El cliente asociado a la cuenta, si el mesero lo eligió al abrirla. */
+  cliente: { id: string; nombre: string; telefono: string | null } | null;
   items: LineaCuenta[];
 };
 
@@ -28,7 +30,7 @@ export async function getCuentasAbiertas(empresaId: string): Promise<CuentaAbier
   const { data, error } = await supabase
     .from('ventas')
     .select(
-      'id, numero_venta, mesa, total, created_at, venta_items (producto_id, nombre_producto, cantidad, precio_unitario, precio_compra, insumo_extra_id)',
+      'id, numero_venta, mesa, total, created_at, cliente_id, clientes (nombre, telefono), venta_items (producto_id, nombre_producto, cantidad, precio_unitario, precio_compra, insumo_extra_id)',
     )
     .eq('empresa_id', empresaId)
     .eq('estado', 'abierta')
@@ -42,6 +44,18 @@ export async function getCuentasAbiertas(empresaId: string): Promise<CuentaAbier
     mesa: ((v as Record<string, unknown>).mesa as string) || `Cuenta #${v.numero_venta}`,
     total: Number(v.total) || 0,
     abiertaDesde: v.created_at as string,
+    cliente: (() => {
+      const id = (v as Record<string, unknown>).cliente_id as string | null;
+      if (!id) return null;
+      type Rel = { nombre?: string; telefono?: string | null };
+      const rel = (v as Record<string, unknown>).clientes as Rel | Rel[] | null;
+      const fila = Array.isArray(rel) ? rel[0] : rel;
+      return {
+        id,
+        nombre: fila?.nombre ?? 'Cliente',
+        telefono: fila?.telefono ?? null,
+      };
+    })(),
     items: (Array.isArray(v.venta_items) ? v.venta_items : []).map((i) => ({
       producto_id: (i.producto_id as string) ?? null,
       nombre_producto: i.nombre_producto as string,

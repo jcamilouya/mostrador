@@ -57,6 +57,7 @@ export function MesasManager({ cuentas }: { cuentas: CuentaAbierta[] }) {
     cargarCuenta({
       id: cuenta.id,
       mesa: cuenta.mesa,
+      cliente: cuenta.cliente,
       items: cuenta.items
         .filter((i) => i.producto_id)
         .map((i) => ({
