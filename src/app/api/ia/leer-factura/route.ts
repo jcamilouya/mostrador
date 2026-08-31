@@ -88,7 +88,9 @@ Reglas:
     });
   }
 
-  const raw = response.content[0]?.type === 'text' ? response.content[0].text : '';
+  // Primer bloque de TEXTO, no content[0]: un modelo puede devolver antes un
+  // bloque de razonamiento y esto quedaria vacio siempre.
+  const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
 
   let datos: Record<string, unknown>;
   try {

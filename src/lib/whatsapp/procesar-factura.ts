@@ -60,7 +60,8 @@ Si no puedes leer algún campo usa null. Si no es una factura responde: {"error"
     }],
   });
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text : '';
+  // Primer bloque de TEXTO, no content[0] (ver leer-factura).
+  const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
 
   let datos: DatosFactura & { error?: string };
   try {

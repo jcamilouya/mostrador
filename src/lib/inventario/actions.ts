@@ -223,6 +223,114 @@ export async function actualizarProducto(
   redirect('/dashboard/inventario');
 }
 
+export type LineaCarta = {
+  nombre: string;
+  precio: number;
+  categoria?: string | null;
+  descripcion?: string | null;
+};
+
+/**
+ * Crea de un golpe los productos leídos de la foto de la carta, con sus
+ * categorías. Es el paso que le quita al dueño teclear cuarenta productos.
+ *
+ * - Se salta los que ya existen con ese nombre (se puede repetir la foto sin
+ *   duplicar la carta).
+ * - Crea las categorías que falten, reusando las que ya tenga.
+ */
+export async function crearProductosDesdeCarta(
+  lineas: LineaCarta[],
+): Promise<{ ok: boolean; creados?: number; omitidos?: number; error?: string }> {
+  const session = await requireEmpresaId();
+  if (!session) return { ok: false, error: 'No autenticado' };
+  if (!Array.isArray(lineas) || lineas.length === 0) {
+    return { ok: false, error: 'No hay productos para crear' };
+  }
+  if (lineas.length > 300) {
+    return { ok: false, error: 'Son demasiados productos de una sola vez (máximo 300).' };
+  }
+
+  const admin = createAdminClient();
+  const empresaId = session.empresaId;
+
+  const clave = (s: string) =>
+    s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+  // Lo que ya existe: ni productos ni categorías se duplican.
+  const [{ data: existentes }, { data: cats }] = await Promise.all([
+    admin.from('productos').select('nombre').eq('empresa_id', empresaId),
+    admin.from('categorias').select('id, nombre').eq('empresa_id', empresaId),
+  ]);
+  const yaHay = new Set((existentes ?? []).map((p) => clave(p.nombre as string)));
+  const catPorNombre = new Map<string, string>(
+    (cats ?? []).map((c) => [clave(c.nombre as string), c.id as string]),
+  );
+
+  // Crear las categorías nuevas que menciona la carta.
+  const COLORES = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6'];
+  const nuevasCats = [
+    ...new Set(
+      lineas
+        .map((l) => (l.categoria ?? '').trim())
+        .filter((c) => c.length > 0 && !catPorNombre.has(clave(c))),
+    ),
+  ];
+  for (const [i, nombre] of nuevasCats.entries()) {
+    const { data } = await admin
+      .from('categorias')
+      .insert({ empresa_id: empresaId, nombre, color: COLORES[i % COLORES.length] })
+      .select('id')
+      .single();
+    if (data) catPorNombre.set(clave(nombre), data.id as string);
+  }
+
+  const filas = [];
+  let omitidos = 0;
+  for (const l of lineas) {
+    const nombre = (l.nombre ?? '').trim();
+    const precio = Math.max(0, Math.round(Number(l.precio) || 0));
+    if (nombre.length < 2 || precio <= 0) {
+      omitidos++;
+      continue;
+    }
+    if (yaHay.has(clave(nombre))) {
+      omitidos++;
+      continue;
+    }
+    yaHay.add(clave(nombre));
+    const catId = l.categoria ? catPorNombre.get(clave(l.categoria)) ?? null : null;
+    filas.push({
+      empresa_id: empresaId,
+      nombre,
+      descripcion: (l.descripcion ?? '').trim() || null,
+      sku: generarSku(nombre),
+      categoria_id: catId,
+      precio_compra: 0,
+      precio_venta: precio,
+      stock_actual: 0,
+      stock_minimo: 0,
+      activo: true,
+      variantes: [],
+      pide_bebida: false,
+    });
+  }
+
+  if (filas.length === 0) {
+    return { ok: false, error: 'Todos esos productos ya estaban en tu lista.' };
+  }
+
+  const { error } = await admin.from('productos').insert(filas);
+  if (error) {
+    console.error('[crearProductosDesdeCarta]', error);
+    return { ok: false, error: 'No pudimos guardar los productos. Intenta de nuevo.' };
+  }
+
+  revalidatePath('/dashboard/inventario');
+  revalidatePath('/dashboard/pos');
+  revalidatePath('/dashboard');
+  return { ok: true, creados: filas.length, omitidos };
+}
+
 export async function archivarProducto(id: string): Promise<void> {
   const session = await requireEmpresaId();
   if (!session) return;

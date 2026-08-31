@@ -1,9 +1,7 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { InventoryList } from '@/components/inventory/InventoryList';
+import { AgregarProductos } from '@/components/inventory/AgregarProductos';
 import {
   getCategorias,
   getEmpresaIdDelUsuario,
@@ -36,12 +34,7 @@ export default async function InventarioPage() {
               : `${productos.length} productos en tu catálogo.`}
           </p>
         </div>
-        <Link href="/dashboard/inventario/nuevo">
-          <Button size="lg" className="rounded-2xl gap-2">
-            <Plus className="h-4 w-4" />
-            Agregar producto
-          </Button>
-        </Link>
+        <AgregarProductos vacio={productos.length === 0} />
       </header>
 
       <InventoryList productos={productos} categorias={categorias} recetas={recetas} />
