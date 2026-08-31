@@ -4,6 +4,8 @@ import { getEmpresaIdDelUsuario, getCategorias } from '@/lib/inventario/queries'
 import { getProductosPOS, getVentasHoy, getTotalVentasHoy } from '@/lib/pos/queries';
 import { getInsumos } from '@/lib/insumos/queries';
 import { getBrebConfig } from '@/lib/breb/queries';
+import { getSesion } from '@/lib/auth/sesion';
+import { GuiaPOS } from '@/components/practica/GuiaPOS';
 import { ProductGrid } from '@/components/pos/ProductGrid';
 import { Cart } from '@/components/pos/Cart';
 import { VentasHoyList } from '@/components/pos/VentasHoyList';
@@ -13,7 +15,8 @@ export const metadata: Metadata = {
 };
 
 export default async function POSPage() {
-  const empresaId = await getEmpresaIdDelUsuario();
+  const sesion = await getSesion();
+  const empresaId = sesion?.empresaId ?? (await getEmpresaIdDelUsuario());
   if (!empresaId) redirect('/onboarding');
 
   const [productos, categorias, ventasHoy, resumenHoy, breb, insumos] = await Promise.all([
@@ -42,13 +45,15 @@ export default async function POSPage() {
 
         <ProductGrid productos={productos} categorias={categorias} bebidas={bebidas} />
 
+        {sesion && !sesion.guiaPosVista && productos.length > 0 && <GuiaPOS />}
+
         <div className="mt-4">
           <VentasHoyList ventas={ventasHoy} totalDia={resumenHoy.total} count={resumenHoy.count} />
         </div>
       </div>
 
       {/* Carrito */}
-      <Cart negocio={breb.nombreNegocio} breb={breb} />
+      <Cart negocio={breb.nombreNegocio} breb={breb} practica={sesion?.modoPractica === true} />
     </div>
   );
 }

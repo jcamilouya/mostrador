@@ -7,6 +7,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { empresaSchema } from '@/lib/auth/schemas';
 
 export type OnboardingState = {
+  /** La empresa quedó creada: el registro sigue en el paso de la carta. */
+  ok?: boolean;
   error?: string;
 };
 
@@ -49,6 +51,9 @@ export async function crearEmpresa(
     telefono: telefono || null,
     whatsapp_numero: whatsapp_numero || null,
     categoria: categoria || null,
+    // Un negocio NUEVO arranca practicando: puede vender, cobrar y equivocarse
+    // sin que nada toque sus cuentas hasta que diga "ya entendi".
+    modo_practica: true,
     plan: 'trial',
     plan_expira_en: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
   };
@@ -63,6 +68,7 @@ export async function crearEmpresa(
   // bloquear el registro de un negocio nuevo.
   if (empresaError?.code === '42703') {
     delete filaEmpresa.categoria;
+    delete filaEmpresa.modo_practica;
     ({ data: empresa, error: empresaError } = await admin
       .from('empresas')
       .insert(filaEmpresa)
@@ -94,6 +100,8 @@ export async function crearEmpresa(
     return { error: 'No pudimos asociar tu cuenta al negocio. Intenta de nuevo.' };
   }
 
-  revalidatePath('/', 'layout');
-  redirect('/dashboard');
+  // OJO: no revalidar ni redirigir aqui. El registro sigue en la misma
+  // pantalla con el paso de "carga tu carta", y un revalidate haria que
+  // /onboarding se volviera a renderizar y expulsara al usuario al dashboard.
+  return { ok: true };
 }

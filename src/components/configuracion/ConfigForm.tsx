@@ -14,6 +14,18 @@ import { validarPayloadEmv } from '@/lib/breb/emv';
 import { BANCOS_COLOMBIA } from '@/lib/breb/schemas';
 import type { BrebConfig } from '@/lib/breb/queries';
 
+/** Tipos de negocio. El valor se guarda tal cual y decide el menú del celular. */
+const TIPOS_NEGOCIO = [
+  { value: 'restaurante', label: '🍽️ Restaurante' },
+  { value: 'cafeteria', label: '☕ Cafetería' },
+  { value: 'bar', label: '🍺 Bar' },
+  { value: 'panaderia', label: '🥐 Panadería' },
+  { value: 'tienda', label: '🏪 Tienda o minimercado' },
+  { value: 'ropa', label: '👕 Ropa y accesorios' },
+  { value: 'servicios', label: '🔧 Servicios' },
+  { value: 'otro', label: '📦 Otro' },
+];
+
 /**
  * Lee una imagen (foto o pantallazo) y devuelve el contenido del QR que tenga,
  * o null si no encuentra ninguno. Corre 100% en el navegador del negocio.
@@ -65,7 +77,14 @@ export function ConfigForm({
   empresa,
   breb,
 }: {
-  empresa: { nombre: string; telefono: string | null; direccion: string | null };
+  empresa: {
+    nombre: string;
+    telefono: string | null;
+    direccion: string | null;
+    nit: string | null;
+    categoria: string | null;
+    whatsapp_numero: string | null;
+  };
   breb: BrebConfig;
 }) {
   const [state, formAction] = useActionState<ConfigState, FormData>(
@@ -150,6 +169,50 @@ export function ConfigForm({
               placeholder="Calle 123 #45-67"
               className="rounded-xl h-11"
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="categoria">¿Qué tipo de negocio es?</Label>
+            <select
+              id="categoria"
+              name="categoria"
+              defaultValue={empresa.categoria ?? ''}
+              className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+            >
+              <option value="">Sin especificar</option>
+              {TIPOS_NEGOCIO.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Define qué ves en el menú del celular. Los restaurantes, bares y cafeterías
+              tienen Mesas a la mano.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="nit">NIT (opcional)</Label>
+            <Input
+              id="nit"
+              name="nit"
+              defaultValue={empresa.nit ?? ''}
+              placeholder="900.123.456-7"
+              className="rounded-xl h-11"
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="whatsapp_numero">WhatsApp para registrar gastos (opcional)</Label>
+            <Input
+              id="whatsapp_numero"
+              name="whatsapp_numero"
+              type="tel"
+              defaultValue={empresa.whatsapp_numero ?? ''}
+              placeholder="+57 300 123 4567"
+              className="rounded-xl h-11"
+            />
+            <p className="text-xs text-muted-foreground">
+              El número desde el que le mandas fotos de facturas al bot.
+            </p>
           </div>
         </div>
       </section>

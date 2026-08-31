@@ -17,7 +17,7 @@ export default async function ConfiguracionPage() {
   const [{ data: empresa }, breb] = await Promise.all([
     supabase
       .from('empresas')
-      .select('nombre, telefono, direccion')
+      .select('nombre, telefono, direccion, nit, categoria, whatsapp_numero')
       .eq('id', empresaId)
       .maybeSingle(),
     getBrebConfig(empresaId),
@@ -37,6 +37,10 @@ export default async function ConfiguracionPage() {
           nombre: empresa?.nombre ?? '',
           telefono: empresa?.telefono ?? null,
           direccion: empresa?.direccion ?? null,
+          nit: (empresa as Record<string, unknown> | null)?.nit as string | null ?? null,
+          categoria: (empresa as Record<string, unknown> | null)?.categoria as string | null ?? null,
+          whatsapp_numero:
+            ((empresa as Record<string, unknown> | null)?.whatsapp_numero as string | null) ?? null,
         }}
         breb={breb}
       />

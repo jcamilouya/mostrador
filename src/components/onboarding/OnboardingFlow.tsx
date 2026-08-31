@@ -1,290 +1,187 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useFormStatus } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { crearEmpresa } from '@/app/onboarding/actions';
-import { ArrowLeft, ArrowRight, Loader2, Store, Sparkles, MessageCircle } from 'lucide-react';
+import { CartaPorFoto } from '@/components/inventory/CartaPorFoto';
+import { ArrowRight, Loader2, Store, ShoppingCart } from 'lucide-react';
 
-const CATEGORIAS = [
-  'Tienda de barrio',
-  'Peluquería / Barbería',
-  'Ferretería',
-  'Restaurante / Cafetería',
-  'Panadería',
-  'Papelería',
-  'Otro',
+/**
+ * Registro de un negocio nuevo. Dos pasos, no cinco.
+ *
+ * Antes pedía NIT, dirección, teléfono y WhatsApp ANTES de dejar entrar. Nada de
+ * eso lo ayuda a vender hoy: ahora vive en Ajustes y se llena cuando haga falta.
+ * Lo único que preguntamos es cómo se llama y qué vende; el resto del tiempo lo
+ * gastamos en dejarle la carta cargada, que es el muro real del primer día.
+ */
+
+const TIPOS = [
+  { value: 'restaurante', emoji: '🍽️', label: 'Restaurante' },
+  { value: 'cafeteria', emoji: '☕', label: 'Cafetería' },
+  { value: 'bar', emoji: '🍺', label: 'Bar' },
+  { value: 'panaderia', emoji: '🥐', label: 'Panadería' },
+  { value: 'tienda', emoji: '🏪', label: 'Tienda' },
+  { value: 'ropa', emoji: '👕', label: 'Ropa' },
+  { value: 'servicios', emoji: '🔧', label: 'Servicios' },
+  { value: 'otro', emoji: '📦', label: 'Otro' },
 ];
 
-function SubmitButton() {
+function SubmitButton({ listo }: { listo: boolean }) {
   const { pending } = useFormStatus();
   return (
     <Button
       type="submit"
       size="lg"
-      className="w-full rounded-2xl gap-2"
-      disabled={pending}
+      disabled={pending || !listo}
+      className="h-14 w-full rounded-2xl gap-2 text-base font-semibold"
     >
       {pending ? (
         <>
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Creando tu negocio…
+          <Loader2 className="h-5 w-5 animate-spin" /> Creando tu negocio…
         </>
       ) : (
         <>
-          ¡Listo, abrir el dashboard!
-          <ArrowRight className="h-4 w-4" />
+          Continuar <ArrowRight className="h-5 w-5" />
         </>
       )}
     </Button>
   );
 }
 
-export function OnboardingFlow({
-  defaultEmail,
-  initialPaso = 1,
-}: {
-  defaultEmail: string;
-  initialPaso?: number;
-}) {
-  const [paso, setPaso] = useState(initialPaso);
+export function OnboardingFlow({ defaultEmail }: { defaultEmail: string }) {
+  const router = useRouter();
   const [state, formAction] = useActionState(crearEmpresa, {});
-  const [valores, setValores] = useState({
-    nombre_negocio: '',
-    email: defaultEmail,
-    nit: '',
-    direccion: '',
-    telefono: '',
-    categoria: '',
-    whatsapp_numero: '',
-  });
+  const [nombre, setNombre] = useState('');
+  const [tipo, setTipo] = useState('');
+  const [creado, setCreado] = useState(false);
+  const [cargados, setCargados] = useState(0);
 
-  const setCampo = (k: keyof typeof valores, v: string) =>
-    setValores((prev) => ({ ...prev, [k]: v }));
+  useEffect(() => {
+    if (state.ok) setCreado(true);
+  }, [state.ok]);
 
-  const puedeAvanzarPaso1 = valores.nombre_negocio.trim().length >= 2;
+  function alPOS() {
+    router.refresh();
+    router.push('/dashboard/pos');
+  }
 
+  // ── Paso 2: dejarle la carta cargada ──
+  if (creado) {
+    return (
+      <div className="mx-auto w-full max-w-lg space-y-6 px-4 py-10">
+        <div className="space-y-2 text-center">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-3xl">
+            📸
+          </span>
+          <h2 className="text-2xl font-semibold tracking-tight">
+            Ahora carguemos lo que vendes
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Tómale una foto a tu carta y sacamos los platos con sus precios. Es lo único
+            que se demora, y lo hacemos por ti.
+          </p>
+        </div>
+
+        {cargados > 0 ? (
+          <div className="space-y-4 rounded-3xl bg-[var(--ingreso)]/10 p-6 text-center">
+            <p className="text-lg font-semibold text-[var(--ingreso)]">
+              ¡Listo! {cargados} productos cargados
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Ya puedes vender. Vamos a que hagas tu primera venta de práctica.
+            </p>
+            <Button
+              size="lg"
+              onClick={alPOS}
+              className="h-14 w-full rounded-2xl gap-2 text-base font-semibold"
+            >
+              <ShoppingCart className="h-5 w-5" /> Ir a vender
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-3xl bg-card p-5 shadow-sm">
+              <CartaPorFoto compacto onListo={(n) => setCargados(n)} />
+            </div>
+            <button
+              type="button"
+              onClick={alPOS}
+              className="w-full rounded-2xl p-2 text-sm text-muted-foreground hover:text-foreground"
+            >
+              Lo hago después, llévame a la app
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ── Paso 1: quién eres ──
   return (
-    <form action={formAction} className="space-y-6">
-      {/* Hidden mirrors para el submit final */}
-      <input type="hidden" name="nombre_negocio" value={valores.nombre_negocio} />
-      <input type="hidden" name="email" value={valores.email} />
-      <input type="hidden" name="nit" value={valores.nit} />
-      <input type="hidden" name="direccion" value={valores.direccion} />
-      <input type="hidden" name="telefono" value={valores.telefono} />
-      <input type="hidden" name="categoria" value={valores.categoria} />
-      <input type="hidden" name="whatsapp_numero" value={valores.whatsapp_numero} />
+    <form action={formAction} className="mx-auto w-full max-w-lg space-y-6 px-4 py-10">
+      <input type="hidden" name="email" value={defaultEmail} />
+      <input type="hidden" name="categoria" value={tipo} />
 
-      {/* Progreso */}
-      <div className="flex items-center justify-center gap-2">
-        {[1, 2, 3].map((p) => (
-          <div
-            key={p}
-            className={`h-1.5 w-12 rounded-full transition-colors ${
-              p <= paso ? 'bg-foreground' : 'bg-border'
-            }`}
-          />
-        ))}
+      <div className="space-y-2 text-center">
+        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary">
+          <Store className="h-7 w-7" />
+        </span>
+        <h2 className="text-2xl font-semibold tracking-tight">Cuéntanos de tu negocio</h2>
+        <p className="text-sm text-muted-foreground">
+          Son dos preguntas. Los demás datos los pones después, cuando los necesites.
+        </p>
       </div>
 
-      {paso === 1 && (
-        <div className="space-y-5">
-          <div className="text-center space-y-2">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-sm">
-              <Store className="h-6 w-6" />
-            </div>
-            <h2 className="text-2xl font-semibold">¿Cómo se llama tu negocio?</h2>
-            <p className="text-sm text-muted-foreground">
-              Esto es lo que tus clientes van a ver en los comprobantes.
-            </p>
-          </div>
+      <div className="space-y-2">
+        <Label htmlFor="nombre_negocio">¿Cómo se llama tu negocio?</Label>
+        <Input
+          id="nombre_negocio"
+          name="nombre_negocio"
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          placeholder="Sabore Fast Food"
+          required
+          autoFocus
+          className="h-12 rounded-2xl text-base"
+        />
+      </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="nn">Nombre del negocio</Label>
-            <Input
-              id="nn"
-              value={valores.nombre_negocio}
-              onChange={(e) => setCampo('nombre_negocio', e.target.value)}
-              placeholder="Tienda Don Pedro"
-              autoFocus
-              required
-              className="rounded-xl h-12 text-base"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="em">Email del negocio</Label>
-            <Input
-              id="em"
-              type="email"
-              value={valores.email}
-              onChange={(e) => setCampo('email', e.target.value)}
-              placeholder="negocio@email.com"
-              required
-              className="rounded-xl h-12"
-            />
-            <p className="text-xs text-muted-foreground">
-              Lo usamos para reportes y notificaciones. Puede ser distinto al tuyo.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="nit" className="flex items-center gap-2">
-              NIT <span className="text-xs text-muted-foreground">(opcional)</span>
-            </Label>
-            <Input
-              id="nit"
-              value={valores.nit}
-              onChange={(e) => setCampo('nit', e.target.value)}
-              placeholder="900.123.456-7"
-              className="rounded-xl h-12"
-            />
-          </div>
-
-          <Button
-            type="button"
-            size="lg"
-            className="w-full rounded-2xl gap-2"
-            disabled={!puedeAvanzarPaso1}
-            onClick={() => setPaso(2)}
-          >
-            Siguiente
-            <ArrowRight className="h-4 w-4" />
-          </Button>
+      <div className="space-y-2">
+        <Label>¿Qué vendes?</Label>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {TIPOS.map((t) => {
+            const activo = tipo === t.value;
+            return (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setTipo(t.value)}
+                className={`flex flex-col items-center gap-1 rounded-2xl p-3 text-xs font-medium transition-transform active:scale-95 ${
+                  activo ? 'bg-foreground text-background' : 'bg-card shadow-sm hover:bg-secondary'
+                }`}
+              >
+                <span className="text-2xl">{t.emoji}</span>
+                {t.label}
+              </button>
+            );
+          })}
         </div>
+        <p className="text-xs text-muted-foreground">
+          Con esto acomodamos la app a tu negocio. Un restaurante ve Mesas a la mano.
+        </p>
+      </div>
+
+      {state.error && (
+        <p className="rounded-xl bg-[var(--egreso)]/10 px-4 py-3 text-sm text-[var(--egreso)]">
+          {state.error}
+        </p>
       )}
 
-      {paso === 2 && (
-        <div className="space-y-5">
-          <div className="text-center space-y-2">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-sm">
-              <Sparkles className="h-6 w-6 text-[var(--utilidad)]" />
-            </div>
-            <h2 className="text-2xl font-semibold">Un par de detalles más</h2>
-            <p className="text-sm text-muted-foreground">
-              Todo es opcional. Puedes saltarlo y completarlo después.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="cat">¿Qué tipo de negocio es?</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {CATEGORIAS.map((c) => (
-                <button
-                  type="button"
-                  key={c}
-                  onClick={() => setCampo('categoria', c)}
-                  className={`rounded-xl border px-3 py-2.5 text-sm text-left transition-colors ${
-                    valores.categoria === c
-                      ? 'border-foreground bg-foreground text-background'
-                      : 'border-border bg-card hover:bg-secondary'
-                  }`}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="tel">Teléfono</Label>
-            <Input
-              id="tel"
-              type="tel"
-              value={valores.telefono}
-              onChange={(e) => setCampo('telefono', e.target.value)}
-              placeholder="300 123 4567"
-              className="rounded-xl h-12"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="dir">Dirección</Label>
-            <Input
-              id="dir"
-              value={valores.direccion}
-              onChange={(e) => setCampo('direccion', e.target.value)}
-              placeholder="Calle 123 #45-67, Bogotá"
-              className="rounded-xl h-12"
-            />
-          </div>
-
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="lg"
-              className="rounded-2xl gap-2"
-              onClick={() => setPaso(1)}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Atrás
-            </Button>
-            <Button
-              type="button"
-              size="lg"
-              className="flex-1 rounded-2xl gap-2"
-              onClick={() => setPaso(3)}
-            >
-              Siguiente
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {paso === 3 && (
-        <div className="space-y-5">
-          <div className="text-center space-y-2">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-card shadow-sm">
-              <MessageCircle className="h-6 w-6 text-[var(--ingreso)]" />
-            </div>
-            <h2 className="text-2xl font-semibold">¿Registras facturas por WhatsApp?</h2>
-            <p className="text-sm text-muted-foreground">
-              Toma foto de tu factura y nuestra IA la registra como gasto.
-              Vinculamos tu número después; por ahora puedes saltar este paso.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="wa">
-              Tu número de WhatsApp <span className="text-xs text-muted-foreground">(opcional)</span>
-            </Label>
-            <Input
-              id="wa"
-              type="tel"
-              value={valores.whatsapp_numero}
-              onChange={(e) => setCampo('whatsapp_numero', e.target.value)}
-              placeholder="+57 300 123 4567"
-              className="rounded-xl h-12"
-            />
-          </div>
-
-          {state.error && (
-            <p className="rounded-xl bg-[var(--egreso)]/10 px-4 py-3 text-sm text-[var(--egreso)]">
-              {state.error}
-            </p>
-          )}
-
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="lg"
-              className="rounded-2xl gap-2"
-              onClick={() => setPaso(2)}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Atrás
-            </Button>
-            <div className="flex-1">
-              <SubmitButton />
-            </div>
-          </div>
-        </div>
-      )}
+      <SubmitButton listo={nombre.trim().length >= 2 && tipo.length > 0} />
     </form>
   );
 }

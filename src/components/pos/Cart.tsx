@@ -13,7 +13,16 @@ import { PaymentModal } from './PaymentModal';
 import { ClienteSearch } from './ClienteSearch';
 import type { BrebConfig } from '@/lib/breb/queries';
 
-export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
+export function Cart({
+  negocio,
+  breb,
+  practica = false,
+}: {
+  negocio: string;
+  breb: BrebConfig;
+  /** Modo práctica: la venta se simula y no se guarda. */
+  practica?: boolean;
+}) {
   const router = useRouter();
   const items = useCart((s) => s.items);
   const setCantidad = useCart((s) => s.setCantidad);
@@ -199,6 +208,7 @@ export function Cart({ negocio, breb }: { negocio: string; breb: BrebConfig }) {
         open={payOpen}
         breb={breb}
         onClose={() => setPayOpen(false)}
+        practica={practica}
         onSuccess={() => {
           setPayOpen(false);
           setOpen(false);

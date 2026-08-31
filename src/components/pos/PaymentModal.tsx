@@ -28,11 +28,14 @@ type Step = 'metodo' | 'efectivo' | 'breb' | 'transferencia' | 'tarjeta' | 'exit
 export function PaymentModal({
   open,
   breb,
+  practica = false,
   onClose,
   onSuccess,
 }: {
   open: boolean;
   breb: BrebConfig;
+  /** El negocio está aprendiendo: se simula la venta y NO se guarda nada. */
+  practica?: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -134,6 +137,19 @@ export function PaymentModal({
 
   function confirmar(metodo: MetodoPago, confirmado?: boolean) {
     setError('');
+
+    // PRÁCTICA: se ve igual que una venta real pero no se escribe NADA — ni la
+    // venta, ni el inventario, ni el acumulado del cliente. Así no hay nada que
+    // filtrar después en las cuentas ni nada que limpiar.
+    if (practica) {
+      setNumeroVenta(0);
+      setFuePendiente(false);
+      setReciboData(null);
+      setStep('exito');
+      clear();
+      return;
+    }
+
     startTransition(async () => {
       let res;
       try {
@@ -208,7 +224,9 @@ export function PaymentModal({
         <DialogHeader>
           <DialogTitle>
             {step === 'exito'
-              ? `Venta #${numeroVenta}`
+              ? practica
+                ? 'Venta de práctica'
+                : `Venta #${numeroVenta}`
               : step === 'error'
                 ? 'Algo salió mal'
                 : `Cobrar ${formatCOP(total)}`}
@@ -550,15 +568,17 @@ export function PaymentModal({
                   fuePendiente ? 'text-[var(--utilidad)]' : 'text-[var(--ingreso)]'
                 }`}
               >
-                {fuePendiente ? 'Pendiente' : '¡Vendido!'}
+                {practica ? '¡Así se vende!' : fuePendiente ? 'Pendiente' : '¡Vendido!'}
               </p>
               <p className="text-2xl font-semibold tabular-nums">
                 {reciboData ? formatCOP(reciboData.total) : formatCOP(total)}
               </p>
               <p className="text-sm text-muted-foreground">
-                {fuePendiente
-                  ? `Venta #${numeroVenta} quedó pendiente. Confírmala desde "Ventas de hoy" cuando recibas el pago.`
-                  : `Venta #${numeroVenta} registrada. Ya puedes seguir con la siguiente.`}
+                {practica
+                  ? 'Así se ve una venta. Esto NO se guardó en tus cuentas: fue práctica.'
+                  : fuePendiente
+                    ? `Venta #${numeroVenta} quedó pendiente. Confírmala desde "Ventas de hoy" cuando recibas el pago.`
+                    : `Venta #${numeroVenta} registrada. Ya puedes seguir con la siguiente.`}
               </p>
             </div>
 
