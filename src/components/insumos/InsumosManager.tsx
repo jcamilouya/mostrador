@@ -132,10 +132,13 @@ export function InsumosManager({
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary">
             <span className="text-2xl">{modDef?.emoji ?? '📦'}</span>
           </span>
-          <p className="text-sm text-muted-foreground">
-            Aún no tienes nada en <strong>{modDef?.label}</strong>. Agrégalo para llevar el control y,
-            si es materia prima, descontarlo solo al vender.
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Aún no tienes nada en <strong>{modDef?.label}</strong>. Agrégalo para llevar el
+            control y, si es materia prima, que se descuente solo cada vez que vendas.
           </p>
+          <Button className="rounded-2xl gap-2" onClick={() => setModal({ tipo: 'crear' })}>
+            <Plus className="h-4 w-4" /> Agregar a {modDef?.label}
+          </Button>
         </div>
       ) : (
         <div className="overflow-hidden rounded-3xl bg-card shadow-sm">

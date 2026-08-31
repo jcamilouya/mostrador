@@ -9,6 +9,18 @@ import { getEgresosPaginados, getEgresosStats, type RangoEgresos } from '@/lib/e
 import { CATEGORIA_INFO } from '@/lib/egresos/schemas';
 import { formatCOP } from '@/lib/utils/format';
 
+import { AyudaPantalla } from '@/components/shared/AyudaPantalla';
+
+const AYUDA = {
+  titulo: 'Cómo registrar tus gastos',
+  puntos: [
+    'Todo lo que sale: proveedores, arriendo, servicios, nómina.',
+    'Puedes tomarle foto a la factura y la app saca el proveedor, el monto y la fecha.',
+    'Si la factura trae productos, te ofrece sumarlos a tus ingredientes.',
+    'Tus ganancias del día son las ventas menos estos gastos.',
+  ],
+};
+
 export const metadata: Metadata = {
   title: 'Gastos — Mostrador',
 };
@@ -40,7 +52,7 @@ export default async function EgresosPage({
     <div className="mx-auto w-full max-w-5xl space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Gastos</h1>
+          <span className="flex items-center gap-1"><h1 className="text-3xl font-semibold tracking-tight">Gastos</h1><AyudaPantalla titulo={AYUDA.titulo} puntos={AYUDA.puntos} /></span>
           <p className="text-sm text-muted-foreground">
             Todo lo que sale del negocio. Para saber cuánto te queda de verdad.
           </p>

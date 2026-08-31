@@ -10,6 +10,18 @@ import { ProductGrid } from '@/components/pos/ProductGrid';
 import { Cart } from '@/components/pos/Cart';
 import { VentasHoyList } from '@/components/pos/VentasHoyList';
 
+import { AyudaPantalla } from '@/components/shared/AyudaPantalla';
+
+const AYUDA = {
+  titulo: 'Cómo vender',
+  puntos: [
+    'Toca un producto y se suma a la cuenta. Tócalo otra vez y van dos.',
+    'A un lado ves lo que lleva el cliente y el total. Puedes quitar o cambiar cantidades.',
+    'Toca Cobrar y elige cómo te pagaron: efectivo, tarjeta, transferencia o Bre-B.',
+    'Si el cliente va a seguir pidiendo, usa Guardar en mesa y le cobras al final.',
+  ],
+};
+
 export const metadata: Metadata = {
   title: 'Vender — Mostrador',
 };
@@ -37,7 +49,7 @@ export default async function POSPage() {
       {/* Panel productos */}
       <div className="flex flex-1 flex-col gap-4 px-4 py-6 pb-40 lg:px-8 lg:py-8 lg:pb-8">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Vender</h1>
+          <span className="flex items-center gap-1"><h1 className="text-2xl font-semibold tracking-tight">Vender</h1><AyudaPantalla titulo={AYUDA.titulo} puntos={AYUDA.puntos} /></span>
           <p className="text-sm text-muted-foreground">
             Toca un producto para agregarlo a la venta.
           </p>

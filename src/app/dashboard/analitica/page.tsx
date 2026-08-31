@@ -19,6 +19,7 @@ import {
   type ProductoSinMovimiento,
 } from '@/lib/analitica/queries';
 import { MetodosPagoChart } from '@/components/analitica/MetodosPagoChart';
+import { EstadoVacio } from '@/components/shared/EstadoVacio';
 import { PlanUpsell } from '@/components/plan/PlanUpsell';
 import { getPlanInfo } from '@/lib/plan/queries';
 import { formatCOP, formatNumber } from '@/lib/utils/format';
@@ -53,6 +54,27 @@ export default async function AnaliticaPage() {
   }
 
   const data = await getAnaliticaData(empresaId, DIAS);
+
+  // Sin ventas en el período, todo el tablero sale en ceros y parece roto.
+  if (data.totalVentasPeriodo <= 0) {
+    return (
+      <div className="mx-auto w-full max-w-6xl space-y-6">
+        <header className="space-y-1">
+          <h1 className="text-3xl font-semibold tracking-tight">Analítica</h1>
+          <p className="text-sm text-muted-foreground">
+            A qué horas vendes más y qué productos dejan más plata.
+          </p>
+        </header>
+        <EstadoVacio
+          emoji="📊"
+          titulo="Todavía no hay nada que analizar"
+          texto="Cuando lleves unas ventas registradas, aquí vas a ver tus horas pico, qué platos dejan más ganancia y cómo te pagan tus clientes."
+          cta="Ir a vender"
+          href="/dashboard/pos"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">

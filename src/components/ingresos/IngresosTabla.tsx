@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { EstadoVacio } from '@/components/shared/EstadoVacio';
 import { formatCOP } from '@/lib/utils/format';
 import type { IngresoRow, RangoIngresos } from '@/lib/ingresos/queries';
 import { VentaDetalleModal } from './VentaDetalleModal';
@@ -69,11 +70,13 @@ export function IngresosTabla({
       </div>
 
       {rows.length === 0 ? (
-        <div className="rounded-3xl bg-card px-4 py-12 text-center shadow-sm">
-          <p className="text-sm text-muted-foreground">
-            No hay ventas en este período.
-          </p>
-        </div>
+        <EstadoVacio
+          emoji="🧾"
+          titulo="Todavía no hay ventas aquí"
+          texto="Cada venta que cobres en el POS aparece en esta lista, con su método de pago y su recibo."
+          cta="Ir a vender"
+          href="/dashboard/pos"
+        />
       ) : (
         <>
           <ul className="divide-y overflow-hidden rounded-3xl bg-card shadow-sm">

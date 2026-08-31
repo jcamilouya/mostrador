@@ -16,7 +16,8 @@ import { getDashboardStats } from '@/lib/dashboard/queries';
 import { contarInsumosBajos } from '@/lib/insumos/queries';
 import { getBalanceDiario } from '@/lib/analitica/queries';
 import { RevenueChartLazy } from '@/components/dashboard/RevenueChartLazy';
-import { WelcomeGuide } from '@/components/dashboard/WelcomeGuide';
+import { ListaArranque } from '@/components/dashboard/ListaArranque';
+import { getTareasArranque } from '@/lib/tareas/queries';
 import { formatCOP } from '@/lib/utils/format';
 
 export const metadata: Metadata = {
@@ -37,10 +38,11 @@ export default async function DashboardHome() {
   const empresaId = sesion?.empresaId ?? null;
   if (!empresaId) redirect('/onboarding');
 
-  const [stats, balance, insumosBajos] = await Promise.all([
+  const [stats, balance, insumosBajos, tareas] = await Promise.all([
     getDashboardStats(empresaId),
     getBalanceDiario(empresaId, 30),
     contarInsumosBajos(empresaId),
+    getTareasArranque(empresaId, sesion?.empresaCategoria ?? null),
   ]);
 
   const nombre = sesion?.nombre ?? sesion?.email?.split('@')[0] ?? 'tendero';
@@ -51,7 +53,7 @@ export default async function DashboardHome() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
-      <WelcomeGuide />
+      <ListaArranque tareas={tareas} />
 
       <header className="space-y-1">
         <p className="text-sm text-muted-foreground">{saludo},</p>

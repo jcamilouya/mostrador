@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Search, User, Phone, ChevronRight } from 'lucide-react';
+import { EstadoVacio } from '@/components/shared/EstadoVacio';
 import { formatCOP } from '@/lib/utils/format';
 import type { Cliente } from '@/lib/clientes/queries';
 
@@ -32,16 +33,21 @@ export function ClientesLista({ clientes }: { clientes: Cliente[] }) {
       </div>
 
       {filtrados.length === 0 ? (
-        <div className="rounded-3xl bg-card px-4 py-12 text-center shadow-sm">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary">
-            <User className="h-6 w-6 text-muted-foreground" />
+        clientes.length === 0 ? (
+          <EstadoVacio
+            emoji="🧍"
+            titulo="Aún no tienes clientes"
+            texto="Guarda a los que vuelven: al cobrar puedes mandarles el recibo por WhatsApp y aquí ves cuánto te han comprado."
+            cta="Agregar un cliente"
+            href="/dashboard/clientes/nuevo"
+          />
+        ) : (
+          <div className="rounded-3xl bg-card px-4 py-12 text-center shadow-sm">
+            <p className="text-sm text-muted-foreground">
+              Ningún cliente coincide con tu búsqueda.
+            </p>
           </div>
-          <p className="text-sm text-muted-foreground">
-            {clientes.length === 0
-              ? 'Aún no tienes clientes. Agrégalos al cobrar o desde aquí.'
-              : 'Ningún cliente coincide con tu búsqueda.'}
-          </p>
-        </div>
+        )
       ) : (
         <ul className="divide-y overflow-hidden rounded-3xl bg-card shadow-sm">
           {filtrados.map((c) => (
