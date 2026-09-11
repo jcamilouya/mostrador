@@ -11,6 +11,7 @@ import {
   Sparkles,
   Settings,
   UtensilsCrossed,
+  QrCode,
 } from 'lucide-react';
 
 export type NavItem = {
@@ -32,6 +33,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/pos', label: 'Vender', icon: ShoppingCart },
   { href: '/dashboard/mesas', label: 'Mesas', icon: UtensilsCrossed },
   { href: '/dashboard/inventario', label: 'Productos', icon: Package },
+  { href: '/dashboard/carta', label: 'Carta digital', icon: QrCode },
   { href: '/dashboard/insumos', label: 'Ingredientes', icon: Warehouse },
   { href: '/dashboard/ingresos', label: 'Ingresos', icon: TrendingUp },
   { href: '/dashboard/egresos', label: 'Gastos', icon: Receipt },
@@ -48,6 +50,7 @@ const ITEM_GASTOS: NavItem = { href: '/dashboard/egresos', label: 'Gastos', icon
 const ITEM_MESAS: NavItem = { href: '/dashboard/mesas', label: 'Mesas', icon: UtensilsCrossed };
 const ITEM_PRODUCTOS: NavItem = { href: '/dashboard/inventario', label: 'Productos', icon: Package };
 const ITEM_INGREDIENTES: NavItem = { href: '/dashboard/insumos', label: 'Ingredientes', icon: Warehouse };
+const ITEM_CARTA: NavItem = { href: '/dashboard/carta', label: 'Carta digital', icon: QrCode };
 const ITEM_INGRESOS: NavItem = { href: '/dashboard/ingresos', label: 'Ingresos', icon: TrendingUp };
 const ITEM_CLIENTES: NavItem = { href: '/dashboard/clientes', label: 'Clientes', icon: Users };
 const ITEM_ANALITICA: NavItem = { href: '/dashboard/analitica', label: 'Analítica', icon: BarChart3 };
@@ -85,6 +88,7 @@ export function moreItems(categoria?: string | null): NavItem[] {
   return [
     ITEM_MESAS,
     ITEM_PRODUCTOS,
+    ITEM_CARTA,
     ITEM_INGREDIENTES,
     ITEM_INGRESOS,
     ITEM_CLIENTES,

@@ -93,7 +93,7 @@ export async function miAccion(prev: State, formData: FormData): Promise<State> 
 
 Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `ventas`, `venta_items`, `egresos`, `movimientos_inventario`. También `clientes`, `insumos` + `producto_receta` + `movimientos_insumos` (recetas), `pagos` + `wompi_eventos` (Wompi), `egresos_pendientes_whatsapp` (bot), `admin_log` (auditoría del super admin). El `empresa_id` es la clave de aislamiento en todas las tablas. Ver `supabase/schema.sql` y `supabase/migrations/` para el schema completo.
 
-Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos), `006_insumos` (ingredientes + recetas), …, `012_producto_insumo_link`, `013_pago_tarjeta`, `014_mesas_cuentas_abiertas`. El código degrada si falta una (reintenta sin la columna nueva o devuelve un mensaje que nombra la migración), así que se puede desplegar antes de correrlas.
+Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos), `006_insumos` (ingredientes + recetas), …, `012_producto_insumo_link`, `013_pago_tarjeta`, `014_mesas_cuentas_abiertas`, `015_empresa_categoria`, `016_modo_practica`, `017_carta_publica`. El código degrada si falta una (reintenta sin la columna nueva o devuelve un mensaje que nombra la migración), así que se puede desplegar antes de correrlas.
 
 **Cómo se detecta "falta la columna" (CRÍTICO — se rompió una vez):** hay que preguntar por **dos** códigos, con `faltaColumna()` de `lib/supabase/errores.ts`. PostgREST responde distinto según la operación: un **SELECT** devuelve `42703` (el error crudo de Postgres), pero un **INSERT/UPDATE** devuelve `PGRST204`, porque valida el cuerpo contra su propio caché de schema antes de mandárselo a Postgres. Mirar solo `42703` dejó el registro de negocios nuevos **totalmente roto** mientras faltaba la migración 016: el reintento nunca corría y el dueño veía "No pudimos crear tu negocio" para siempre. Además, el reintento debe soltar **solo la columna que falta** (`nombreColumnaFaltante()`), no todas las opcionales: al soltarlas en bloque, un restaurante nuevo se creaba sin su `categoria` y perdía el menú de Mesas.
 
@@ -146,6 +146,27 @@ El público no es técnico y la app "de inicio es muy confusa". Todo lo que ense
 **Siguiente paso (fase 3).** `getSiguientePaso` → `SiguientePaso`. Propone **UNA** cosa, nunca una lista, y solo cuando el negocio ya vende (`VENTAS_PARA_SUGERIR` = 5 ventas cobradas) y **no** está en modo práctica. Orden: recetas → mesas → cobro por QR → datos del negocio → recargo de tarjeta. Cada paso tiene su condición real (¿hay filas en `producto_receta`? ¿alguna venta con `mesa`? ¿hay `breb_qr_payload`?), así que se apaga solo al hacerlo. Recetas y mesas solo se proponen a negocios de comida; el QR solo si `esPro`; el recargo solo si YA cobró con tarjeta alguna vez.
 
 **"Ahora no" va en COOKIE (`COOKIE_PASOS`), no en localStorage** — esto importa: con localStorage el servidor no sabe qué pospuso, así que la tarjeta tenía que pintarse después de hidratar y en un celular lento aparecía tarde y de golpe. Con cookie el servidor filtra y la página llega pintada. Posponer **no silencia todo**: salta ese paso y propone el siguiente. Dura `DIAS_POSPONER` (7) días. Los tipos y constantes compartidos están en `lib/tareas/pasos.ts` y no en `queries.ts`, porque ese arrastra el cliente de Supabase al bundle del navegador.
+
+### Carta digital pública (migración `017`)
+
+El menú del negocio en internet, con un QR para pegar en las mesas. Es **la única parte de la app que ve alguien sin cuenta**, así que tiene sus propias reglas.
+
+**Ruta pública:** `/carta/[slug]` — fuera de `/dashboard`, sin sesión, y **no** está en el matcher de `src/proxy.ts`. `revalidate = 60`: una mesa llena de gente escaneando no golpea la BD, y un cambio de precio se ve al minuto. Lleva `robots: noindex` — es la carta de un negocio, no contenido que queramos en Google.
+
+**`getCartaPublica(slug)` es la función más delicada de la app.** Como no hay sesión usa `createAdminClient()` (bypasea RLS), así que:
+
+1. Solo responde si `empresas.carta_activa` es true. Un slug que existe pero con la carta apagada da el **mismo 404** que un slug inventado: desde fuera no se puede saber si el negocio existe.
+2. Solo selecciona los campos que van impresos: nombre, teléfono, dirección, y de cada producto nombre/descripción/precio/variantes. **Nunca** `precio_compra`, stock, ni ids de otras tablas. Si hace falta otro campo se agrega ahí a mano y se piensa dos veces.
+
+Va con `cache()` de React porque la piden `generateMetadata` y la página en el mismo request.
+
+**Consentimiento:** `carta_activa` arranca en `FALSE` y solo se enciende desde `/dashboard/carta`, donde el interruptor dice con esas palabras que cualquiera con el link verá sus platos y precios. Nadie queda publicado por no haber leído.
+
+**`productos.en_carta`** (default `TRUE`) deja fuera lo que se vende pero no es carta: domicilio, bolsa, desechables. Se alterna desde la misma pantalla.
+
+**El slug** se genera del nombre (`lib/carta/slug.ts`, `aSlug`) y el dueño lo puede editar. Índice único **parcial** (`WHERE carta_slug IS NOT NULL`) para que los negocios sin carta no choquen entre sí; un slug repetido devuelve `23505` y se traduce a "ese link ya lo usa otro negocio".
+
+**El dominio del link y del QR sale de los headers de la petición** (`x-forwarded-host`/`host`), no de `NEXT_PUBLIC_APP_URL`: así funciona igual en producción, en un preview de Vercel y en localhost sin configurar nada. El QR se dibuja en el navegador con `qrcode` (ya estaba para Bre-B).
 
 ### Rendimiento (leer antes de tocar layout/proxy)
 

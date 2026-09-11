@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { esNegocioDeMesas } from '@/components/shared/NavItems';
+import { faltaColumna } from '@/lib/supabase/errores';
 import type { Paso } from './pasos';
 
 export type Tarea = {
@@ -159,7 +160,7 @@ export async function getSiguientePaso(
       .eq('activo', true),
     supabase
       .from('empresas')
-      .select('telefono, direccion, breb_llave, breb_qr_payload, recargo_tarjeta_pct')
+      .select('telefono, direccion, breb_llave, breb_qr_payload, recargo_tarjeta_pct, carta_activa')
       .eq('id', empresaId)
       .maybeSingle(),
   ]);
@@ -167,12 +168,25 @@ export async function getSiguientePaso(
   // Todavía está aprendiendo a cobrar: no distraerlo con nada más.
   if ((ventas.count ?? 0) < VENTAS_PARA_SUGERIR) return null;
 
-  const empresa = (empresaRes.data ?? {}) as {
+  // Sin la migración 017 la columna de la carta no existe y la fila entera
+  // vuelve vacía: se reintenta sin ella para no quedarnos sin ningún paso.
+  let filaEmpresa: Record<string, unknown> | null = empresaRes.data;
+  if (!filaEmpresa && faltaColumna(empresaRes.error)) {
+    const reintento = await supabase
+      .from('empresas')
+      .select('telefono, direccion, breb_llave, breb_qr_payload, recargo_tarjeta_pct')
+      .eq('id', empresaId)
+      .maybeSingle();
+    filaEmpresa = reintento.data;
+  }
+
+  const empresa = (filaEmpresa ?? {}) as {
     telefono?: string | null;
     direccion?: string | null;
     breb_llave?: string | null;
     breb_qr_payload?: string | null;
     recargo_tarjeta_pct?: number | null;
+    carta_activa?: boolean | null;
   };
 
   const preparaComida = esNegocioDeMesas(categoria);
@@ -204,7 +218,21 @@ export async function getSiguientePaso(
     });
   }
 
-  // 3. Cobrar por QR. Solo si el plan lo incluye: no ofrecer lo que no puede usar.
+  // 3. Carta digital: la única que NO es de configuración, es para sus clientes.
+  // Solo a quien sirve en mesa, y solo si ya tiene qué mostrar.
+  if (preparaComida && !empresa.carta_activa && (productos.count ?? 0) > 0) {
+    pasos.push({
+      id: 'carta-digital',
+      emoji: '📱',
+      titulo: 'Pon tu carta en un QR para las mesas',
+      porque:
+        'Tus platos y precios en una página. Pegas el QR en cada mesa, el cliente lo escanea y ve la carta en su celular. Si cambias un precio, cambia sola.',
+      cta: 'Publicar mi carta',
+      href: '/dashboard/carta',
+    });
+  }
+
+  // 4. Cobrar por QR. Solo si el plan lo incluye: no ofrecer lo que no puede usar.
   if (opciones.esPro && !empresa.breb_qr_payload && !empresa.breb_llave) {
     pasos.push({
       id: 'cobro-qr',
@@ -217,7 +245,7 @@ export async function getSiguientePaso(
     });
   }
 
-  // 4. Datos del negocio: para que el recibo que manda no sea anónimo.
+  // 5. Datos del negocio: para que el recibo que manda no sea anónimo.
   if (!empresa.telefono || !empresa.direccion) {
     pasos.push({
       id: 'datos',
@@ -230,7 +258,7 @@ export async function getSiguientePaso(
     });
   }
 
-  // 5. Recargo de tarjeta: solo tiene sentido si YA está cobrando con tarjeta.
+  // 6. Recargo de tarjeta: solo tiene sentido si YA está cobrando con tarjeta.
   if ((conTarjeta.count ?? 0) > 0 && !empresa.recargo_tarjeta_pct) {
     pasos.push({
       id: 'recargo',
