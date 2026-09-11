@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { faltaColumna } from '@/lib/supabase/errores';
 import {
   descontarIngredientesPorVenta,
   descontarInsumosVendidos,
@@ -73,7 +74,7 @@ export async function guardarConfiguracion(
   let { error } = await admin.from('empresas').update(cambios).eq('id', empresaId);
 
   // Sin la migración 013 la columna del recargo no existe: guardar el resto.
-  if (error?.code === '42703') {
+  if (faltaColumna(error)) {
     delete cambios.recargo_tarjeta_pct;
     ({ error } = await admin.from('empresas').update(cambios).eq('id', empresaId));
   }

@@ -57,7 +57,9 @@ src/app/
 
 ### Flujo de autenticación y multi-tenant
 
-`middleware.ts` protege todas las rutas `/dashboard/*` y `/onboarding/*`. Si el usuario tiene sesión pero no tiene `empresa_id` en la tabla `usuarios`, redirige a `/onboarding`. El `DashboardLayout` hace una segunda verificación server-side para asegurar que la empresa existe.
+`src/proxy.ts` protege todas las rutas `/dashboard/*` y `/onboarding/*`, y devuelve al dashboard a quien ya tiene sesión y abre `/login`. El `DashboardLayout` hace una segunda verificación server-side y manda a `/onboarding` a quien no tiene empresa.
+
+**DOS trampas del archivo, ambas ya pagadas:** (a) en Next 16 la convención se llama `proxy.ts` con función `proxy` — `middleware`/`middleware.ts` está deprecado; (b) el archivo va **dentro de `src/`**, al lado de `app/`. Estuvo en la raíz del proyecto (hermano de `src/`) y Next lo compilaba pero **nunca lo ejecutaba**: ni un redirect incondicional se disparaba. No se notó porque cada layout revalida la sesión por su cuenta; esto es el segundo cinturón, no el único. Si tocas el archivo, compruébalo con los cuatro casos: sin sesión → `/login` 200 y `/dashboard` 307; con sesión → `/login` 307 y `/dashboard` 200.
 
 **Confirmación de correo:** `signUp` manda `emailRedirectTo` a `/auth/callback?next=/onboarding&confirmar=1`. El callback maneja tanto `code` (PKCE/OAuth) como `token_hash`+`type` (link de correo, funciona en otro dispositivo) y, si es confirmación, redirige a `/auth/confirmado` (mensaje amigable + auto-entra). Requiere Site URL + Redirect URLs correctos en el panel de Supabase.
 
@@ -93,6 +95,8 @@ Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `venta
 
 Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos), `006_insumos` (ingredientes + recetas), …, `012_producto_insumo_link`, `013_pago_tarjeta`, `014_mesas_cuentas_abiertas`. El código degrada si falta una (reintenta sin la columna nueva o devuelve un mensaje que nombra la migración), así que se puede desplegar antes de correrlas.
 
+**Cómo se detecta "falta la columna" (CRÍTICO — se rompió una vez):** hay que preguntar por **dos** códigos, con `faltaColumna()` de `lib/supabase/errores.ts`. PostgREST responde distinto según la operación: un **SELECT** devuelve `42703` (el error crudo de Postgres), pero un **INSERT/UPDATE** devuelve `PGRST204`, porque valida el cuerpo contra su propio caché de schema antes de mandárselo a Postgres. Mirar solo `42703` dejó el registro de negocios nuevos **totalmente roto** mientras faltaba la migración 016: el reintento nunca corría y el dueño veía "No pudimos crear tu negocio" para siempre. Además, el reintento debe soltar **solo la columna que falta** (`nombreColumnaFaltante()`), no todas las opcionales: al soltarlas en bloque, un restaurante nuevo se creaba sin su `categoria` y perdía el menú de Mesas.
+
 ### POS, productos y combos
 
 Un producto puede tener **opciones/combos** en `productos.variantes` (JSONB: `[{ nombre, precio }]`; cada opción tiene su precio **completo**, no un delta). `ProductForm` los edita (input hidden serializado a JSON, validado por `variantesSchema` en `lib/inventario/schemas.ts`). En el POS (`ProductGrid`), tocar un producto con variantes abre un selector (opción "Sencillo" con `precio_venta` base + cada variante); sin variantes se agrega directo. El carrito (`stores/cart-store.ts`) llavea cada línea por `lineId` (`producto_id` o `producto_id::variante`) para que dos opciones del mismo producto sean líneas distintas; `venta_items` guarda el nombre y precio ya resueltos (sin cambios de schema). El stock es a nivel de producto (las variantes lo comparten).
@@ -127,9 +131,9 @@ Una venta puede quedar en `estado = 'abierta'` con `ventas.mesa` (etiqueta libre
 
 `empresas.recargo_tarjeta_pct` (0–20, default 0) y `ventas.recargo` (los pesos cobrados de más, aparte del precio de los productos). El porcentaje se configura en Configuración; el POS lo **muestra** pero el monto lo recalcula el servidor en `registrarVenta`/`cobrarCuenta`. Nota de negocio: en Colombia el recargo por tarjeta va contra las reglas de Visa/Mastercard y la SIC lo ha sancionado; el mismo campo sirve para presentarlo como descuento por efectivo si algún día se cambia.
 
-### Rendimiento (leer antes de tocar layout/middleware)
+### Rendimiento (leer antes de tocar layout/proxy)
 
-Medido: 400–900 ms por navegación y 11 consultas por clic, con ~360 ms iniciales gastados en preguntar la identidad **tres veces**. Lo que lo arregló: (a) `src/app/dashboard/loading.tsx` + `pos/loading.tsx` — sin fronteras de suspense el navegador deja la pantalla vieja congelada y se siente trabado; (b) `lib/auth/sesion.ts` → `getSesion()` con `cache()` de React, que comparten layout, página y `getEmpresaIdDelUsuario`; (c) el middleware ya **no** consulta `usuarios` (el layout hace la misma comprobación); (d) recharts entra por `next/dynamic`; (e) `RealtimeRefresher` no refresca dentro del POS ni con la pestaña de fondo, y hace debounce de 1.5 s. **No volver a meter consultas de identidad en el middleware ni en las páginas.**
+Medido: 400–900 ms por navegación y 11 consultas por clic, con ~360 ms iniciales gastados en preguntar la identidad **tres veces**. Lo que lo arregló: (a) `src/app/dashboard/loading.tsx` + `pos/loading.tsx` — sin fronteras de suspense el navegador deja la pantalla vieja congelada y se siente trabado; (b) `lib/auth/sesion.ts` → `getSesion()` con `cache()` de React, que comparten layout, página y `getEmpresaIdDelUsuario`; (c) el proxy ya **no** consulta `usuarios` (el layout hace la misma comprobación); (d) recharts entra por `next/dynamic`; (e) `RealtimeRefresher` no refresca dentro del POS ni con la pestaña de fondo, y hace debounce de 1.5 s. **No volver a meter consultas de identidad en el proxy ni en las páginas.**
 
 ### Realtime
 

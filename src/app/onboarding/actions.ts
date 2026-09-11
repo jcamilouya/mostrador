@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { empresaSchema } from '@/lib/auth/schemas';
+import { faltaColumna, nombreColumnaFaltante } from '@/lib/supabase/errores';
 
 export type OnboardingState = {
   /** La empresa quedó creada: el registro sigue en el paso de la carta. */
@@ -64,11 +65,20 @@ export async function crearEmpresa(
     .select('id')
     .single();
 
-  // Sin la migración 015 la columna no existe: reintentar sin ella para no
-  // bloquear el registro de un negocio nuevo.
-  if (empresaError?.code === '42703') {
-    delete filaEmpresa.categoria;
-    delete filaEmpresa.modo_practica;
+  // Si falta una migración (015 / 016), la columna nueva no existe todavía:
+  // soltarla y reintentar, para que la falta de una migración NUNCA impida
+  // registrar un negocio. Se suelta de a una y por nombre, así que si solo
+  // falta `modo_practica` el negocio conserva su `categoria`.
+  for (let intento = 0; empresaError && faltaColumna(empresaError) && intento < 4; intento++) {
+    const columna = nombreColumnaFaltante(empresaError);
+    if (columna && columna in filaEmpresa) {
+      delete filaEmpresa[columna];
+    } else {
+      // No supimos cuál es: soltar todas las opcionales de golpe antes de
+      // rendirnos, porque lo importante es que el negocio quede creado.
+      delete filaEmpresa.categoria;
+      delete filaEmpresa.modo_practica;
+    }
     ({ data: empresa, error: empresaError } = await admin
       .from('empresas')
       .insert(filaEmpresa)
@@ -80,6 +90,9 @@ export async function crearEmpresa(
     if (empresaError?.code === '23505') {
       return { error: 'Ese email ya está registrado en otra empresa.' };
     }
+    // Dejar rastro en los logs: este error dejaba al dueño repitiendo "intenta
+    // de nuevo" sin que nadie supiera qué había fallado de verdad.
+    console.error('[onboarding] no se pudo crear la empresa', empresaError);
     return { error: 'No pudimos crear tu negocio. Intenta de nuevo.' };
   }
 

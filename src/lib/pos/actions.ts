@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { faltaColumna } from '@/lib/supabase/errores';
 import { getPlanInfo } from '@/lib/plan/queries';
 import {
   costosDeReceta,
@@ -145,7 +146,7 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
 
   // Si alguna columna nueva aún no existe (migraciones 011/013 sin correr),
   // reintentar sin ella para no bloquear la venta.
-  if (insertRes.error?.code === '42703') {
+  if (faltaColumna(insertRes.error)) {
     delete ventaInsert.idempotency_key;
     delete ventaInsert.recargo;
     insertRes = await admin

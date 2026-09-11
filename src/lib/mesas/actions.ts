@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { faltaColumna } from '@/lib/supabase/errores';
 import { getPlanInfo } from '@/lib/plan/queries';
 import {
   costosDeReceta,
@@ -188,7 +189,7 @@ export async function guardarCuenta(input: unknown): Promise<CuentaResult> {
 
   if (error || !venta) {
     // Sin la migración 014 la BD rechaza el estado 'abierta' o la columna mesa.
-    if (error?.code === '23514' || error?.code === '42703') {
+    if (error?.code === '23514' || faltaColumna(error)) {
       return {
         ok: false,
         error: 'Para usar mesas falta correr la migración 014 en Supabase.',
@@ -277,7 +278,7 @@ export async function cobrarCuenta(input: unknown): Promise<CuentaResult> {
     .eq('estado', 'abierta')
     .select('id');
 
-  if (updErr?.code === '42703') {
+  if (faltaColumna(updErr)) {
     delete cambios.recargo;
     ({ data: cerradas, error: updErr } = await ctx.admin
       .from('ventas')
