@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
 
 export type Plan = 'basico' | 'pro' | 'trial';
@@ -64,7 +65,13 @@ function calc(plan: Plan, expiraEn: string | null): PlanInfo {
   };
 }
 
-export async function getPlanInfo(empresaId: string): Promise<PlanInfo> {
+/**
+ * El plan de la empresa. Va con `cache()` de React porque lo piden el layout Y
+ * la página de inicio en el mismo request: sin esto era el mismo viaje a
+ * Supabase dos veces por navegación, justo lo que se arregló en su día con
+ * `getSesion`.
+ */
+export const getPlanInfo = cache(async (empresaId: string): Promise<PlanInfo> => {
   const supabase = await createClient();
   const { data } = await supabase
     .from('empresas')
@@ -72,7 +79,7 @@ export async function getPlanInfo(empresaId: string): Promise<PlanInfo> {
     .eq('id', empresaId)
     .maybeSingle();
   return calc((data?.plan as Plan) ?? 'trial', data?.plan_expira_en ?? null);
-}
+});
 
 /** Versión que resuelve la empresa del usuario autenticado. Devuelve null si no hay sesión/empresa. */
 export async function getPlanInfoDelUsuario(): Promise<PlanInfo | null> {

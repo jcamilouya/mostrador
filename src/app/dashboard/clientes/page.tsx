@@ -6,6 +6,17 @@ import { Button } from '@/components/ui/button';
 import { getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
 import { getClientes } from '@/lib/clientes/queries';
 import { ClientesLista } from '@/components/clientes/ClientesLista';
+import { AyudaPantalla } from '@/components/shared/AyudaPantalla';
+
+const AYUDA = {
+  titulo: "Para qué sirven los clientes",
+  puntos: [
+    "Guarda a los que vuelven: nombre y teléfono, nada más.",
+    "Al cobrar puedes elegirlo y la venta queda a su nombre.",
+    "Así ves cuánto te ha comprado cada uno y quién es tu mejor cliente.",
+    "Con el teléfono guardado le puedes mandar el recibo por WhatsApp.",
+  ],
+};
 
 export const metadata: Metadata = {
   title: 'Clientes — Mostrador',
@@ -21,9 +32,9 @@ export default async function ClientesPage() {
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <header className="flex items-center justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="flex items-center gap-2 text-3xl font-semibold tracking-tight">
+          <span className="flex items-center gap-1"><h1 className="flex items-center gap-2 text-3xl font-semibold tracking-tight">
             <Users className="h-7 w-7" /> Clientes
-          </h1>
+          </h1><AyudaPantalla titulo={AYUDA.titulo} puntos={AYUDA.puntos} /></span>
           <p className="text-sm text-muted-foreground">
             Tus clientes y su historial de compras.
           </p>

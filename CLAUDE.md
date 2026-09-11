@@ -131,6 +131,22 @@ Una venta puede quedar en `estado = 'abierta'` con `ventas.mesa` (etiqueta libre
 
 `empresas.recargo_tarjeta_pct` (0–20, default 0) y `ventas.recargo` (los pesos cobrados de más, aparte del precio de los productos). El porcentaje se configura en Configuración; el POS lo **muestra** pero el monto lo recalcula el servidor en `registrarVenta`/`cobrarCuenta`. Nota de negocio: en Colombia el recargo por tarjeta va contra las reglas de Visa/Mastercard y la SIC lo ha sancionado; el mismo campo sirve para presentarlo como descuento por efectivo si algún día se cambia.
 
+### Aprendizaje del dueño (fases 1–3)
+
+El público no es técnico y la app "de inicio es muy confusa". Todo lo que enseña sigue **una regla: nada se pregunta ni se propone antes de tiempo**, y nada se marca a mano — el estado sale siempre de la base de datos, así que no hay carteles mintiendo.
+
+**Registro (fase 1).** `OnboardingFlow` pide dos cosas: cómo se llama y qué vende (`empresas.categoria`, migración `015`). El resto (NIT, dirección, teléfono, WhatsApp) se movió a Ajustes. El paso 2 es cargar la carta con una foto (`CartaPorFoto`). El layout de `/onboarding` tiene **"Entrar con otra cuenta"**: sin eso, una sesión sin empresa queda encerrada (login → dashboard → onboarding → falla → login…).
+
+**Modo práctica (migración `016`).** `empresas.modo_practica` arranca en `true` solo para empresas nuevas (default de la columna es `FALSE` a propósito: un restaurante en producción no puede despertar sin registrar su caja). Con él, `PaymentModal` corta antes de guardar: muestra "¡Vendido!" pero no escribe venta, ni stock, ni acumulado del cliente. `guia_pos_vista` hace que los globos del POS salgan una sola vez, y vive en la empresa y no en el navegador para que no vuelvan al cambiar de celular.
+
+**Lista de arranque (fase 2).** `getTareasArranque` → `ListaArranque`, en el inicio. 4–5 tareas (la de ingredientes solo si `esNegocioDeMesas(categoria)`), cada una marcada por un `count` real. Se puede **doblar pero no cerrar**, y cuando está todo hecho devuelve `null` y no vuelve nunca. Solo el doblado vive en `localStorage`.
+
+**Pantallas que enseñan (fase 2).** `EstadoVacio` en toda pantalla sin datos (nunca una pantalla en blanco) y `AyudaPantalla` — el "?" al lado del h1 — en las **diez** pantallas del dashboard. El botón de WhatsApp de soporte sale solo si está `NEXT_PUBLIC_SOPORTE_WHATSAPP`.
+
+**Siguiente paso (fase 3).** `getSiguientePaso` → `SiguientePaso`. Propone **UNA** cosa, nunca una lista, y solo cuando el negocio ya vende (`VENTAS_PARA_SUGERIR` = 5 ventas cobradas) y **no** está en modo práctica. Orden: recetas → mesas → cobro por QR → datos del negocio → recargo de tarjeta. Cada paso tiene su condición real (¿hay filas en `producto_receta`? ¿alguna venta con `mesa`? ¿hay `breb_qr_payload`?), así que se apaga solo al hacerlo. Recetas y mesas solo se proponen a negocios de comida; el QR solo si `esPro`; el recargo solo si YA cobró con tarjeta alguna vez.
+
+**"Ahora no" va en COOKIE (`COOKIE_PASOS`), no en localStorage** — esto importa: con localStorage el servidor no sabe qué pospuso, así que la tarjeta tenía que pintarse después de hidratar y en un celular lento aparecía tarde y de golpe. Con cookie el servidor filtra y la página llega pintada. Posponer **no silencia todo**: salta ese paso y propone el siguiente. Dura `DIAS_POSPONER` (7) días. Los tipos y constantes compartidos están en `lib/tareas/pasos.ts` y no en `queries.ts`, porque ese arrastra el cliente de Supabase al bundle del navegador.
+
 ### Rendimiento (leer antes de tocar layout/proxy)
 
 Medido: 400–900 ms por navegación y 11 consultas por clic, con ~360 ms iniciales gastados en preguntar la identidad **tres veces**. Lo que lo arregló: (a) `src/app/dashboard/loading.tsx` + `pos/loading.tsx` — sin fronteras de suspense el navegador deja la pantalla vieja congelada y se siente trabado; (b) `lib/auth/sesion.ts` → `getSesion()` con `cache()` de React, que comparten layout, página y `getEmpresaIdDelUsuario`; (c) el proxy ya **no** consulta `usuarios` (el layout hace la misma comprobación); (d) recharts entra por `next/dynamic`; (e) `RealtimeRefresher` no refresca dentro del POS ni con la pestaña de fondo, y hace debounce de 1.5 s. **No volver a meter consultas de identidad en el proxy ni en las páginas.**

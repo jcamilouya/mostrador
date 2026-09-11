@@ -4,6 +4,17 @@ import { createClient } from '@/lib/supabase/server';
 import { getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
 import { getBrebConfig } from '@/lib/breb/queries';
 import { ConfigForm } from '@/components/configuracion/ConfigForm';
+import { AyudaPantalla } from '@/components/shared/AyudaPantalla';
+
+const AYUDA = {
+  titulo: "Qué se configura aquí",
+  puntos: [
+    "Los datos de tu negocio: nombre, teléfono y dirección. Salen en los recibos.",
+    "Tu QR de Bre-B: subes la foto del que te dio el banco y queda en la pantalla de cobro.",
+    "El recargo por tarjeta, si el datáfono te cobra un porcentaje.",
+    "Lo que cambies aquí se aplica de una, no hay que guardar dos veces.",
+  ],
+};
 
 export const metadata: Metadata = {
   title: 'Configuración — Mostrador',
@@ -26,7 +37,7 @@ export default async function ConfiguracionPage() {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
       <header className="space-y-1">
-        <h1 className="text-3xl font-semibold tracking-tight">Configuración</h1>
+        <span className="flex items-center gap-1"><h1 className="text-3xl font-semibold tracking-tight">Configuración</h1><AyudaPantalla titulo={AYUDA.titulo} puntos={AYUDA.puntos} /></span>
         <p className="text-sm text-muted-foreground">
           Datos de tu negocio y cobros con Bre-B.
         </p>

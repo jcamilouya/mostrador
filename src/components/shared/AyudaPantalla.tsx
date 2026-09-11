@@ -26,7 +26,10 @@ export function AyudaPantalla({
 }) {
   const [abierto, setAbierto] = useState(false);
   // Sin número configurado, la ayuda se muestra sin el botón de WhatsApp.
-  const soporte = (process.env.NEXT_PUBLIC_SOPORTE_WHATSAPP ?? '').replace(/D/g, '');
+  // OJO: `\D` (todo lo que NO es dígito). Estaba escrito `/D/g`, que borraba la
+  // letra D y dejaba pasar el "+" y los espacios: el enlace de wa.me quedaba
+  // roto con cualquier número escrito como "+57 300 123 4567".
+  const soporte = (process.env.NEXT_PUBLIC_SOPORTE_WHATSAPP ?? '').replace(/\D/g, '');
 
   const mensaje = encodeURIComponent(`Hola, tengo una duda con "${titulo}" en Mostrador.`);
 

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import {
   TrendingUp,
@@ -17,7 +18,10 @@ import { contarInsumosBajos } from '@/lib/insumos/queries';
 import { getBalanceDiario } from '@/lib/analitica/queries';
 import { RevenueChartLazy } from '@/components/dashboard/RevenueChartLazy';
 import { ListaArranque } from '@/components/dashboard/ListaArranque';
-import { getTareasArranque } from '@/lib/tareas/queries';
+import { SiguientePaso } from '@/components/dashboard/SiguientePaso';
+import { getTareasArranque, getSiguientePaso } from '@/lib/tareas/queries';
+import { getPlanInfo } from '@/lib/plan/queries';
+import { COOKIE_PASOS } from '@/lib/tareas/pasos';
 import { formatCOP } from '@/lib/utils/format';
 
 export const metadata: Metadata = {
@@ -38,11 +42,24 @@ export default async function DashboardHome() {
   const empresaId = sesion?.empresaId ?? null;
   if (!empresaId) redirect('/onboarding');
 
-  const [stats, balance, insumosBajos, tareas] = await Promise.all([
+  const plan = await getPlanInfo(empresaId);
+
+  // Lo que el dueño pospuso con "Ahora no" viaja en cookie, así que el servidor
+  // ya sabe qué NO pintar y la tarjeta no aparece tarde al cargar el JS.
+  const pospuestos = ((await cookies()).get(COOKIE_PASOS)?.value ?? '')
+    .split(',')
+    .filter(Boolean);
+
+  const [stats, balance, insumosBajos, tareas, paso] = await Promise.all([
     getDashboardStats(empresaId),
     getBalanceDiario(empresaId, 30),
     contarInsumosBajos(empresaId),
     getTareasArranque(empresaId, sesion?.empresaCategoria ?? null),
+    getSiguientePaso(empresaId, sesion?.empresaCategoria ?? null, {
+      esPro: plan.esPro,
+      modoPractica: sesion?.modoPractica ?? false,
+      pospuestos,
+    }),
   ]);
 
   const nombre = sesion?.nombre ?? sesion?.email?.split('@')[0] ?? 'tendero';
@@ -54,6 +71,7 @@ export default async function DashboardHome() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
       <ListaArranque tareas={tareas} />
+      <SiguientePaso paso={paso} />
 
       <header className="space-y-1">
         <p className="text-sm text-muted-foreground">{saludo},</p>

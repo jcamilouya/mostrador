@@ -23,6 +23,17 @@ import { EstadoVacio } from '@/components/shared/EstadoVacio';
 import { PlanUpsell } from '@/components/plan/PlanUpsell';
 import { getPlanInfo } from '@/lib/plan/queries';
 import { formatCOP, formatNumber } from '@/lib/utils/format';
+import { AyudaPantalla } from '@/components/shared/AyudaPantalla';
+
+const AYUDA = {
+  titulo: "Qué te dice la analítica",
+  puntos: [
+    "A qué horas vendes más, para saber cuándo necesitas más gente.",
+    "Qué productos te dejan más plata, que no siempre son los que más vendes.",
+    "Cómo te paga la gente: efectivo, tarjeta, QR.",
+    "Todo sale de tus ventas cobradas, no de estimaciones.",
+  ],
+};
 
 export const metadata: Metadata = {
   title: 'Analítica — Mostrador',
@@ -40,7 +51,7 @@ export default async function AnaliticaPage() {
     return (
       <div className="mx-auto w-full max-w-6xl space-y-6">
         <header className="space-y-1">
-          <h1 className="text-3xl font-semibold tracking-tight">Analítica</h1>
+          <span className="flex items-center gap-1"><h1 className="text-3xl font-semibold tracking-tight">Analítica</h1><AyudaPantalla titulo={AYUDA.titulo} puntos={AYUDA.puntos} /></span>
           <p className="text-sm text-muted-foreground">
             Entiende tu negocio: horas pico, productos estrella y márgenes.
           </p>
@@ -60,7 +71,7 @@ export default async function AnaliticaPage() {
     return (
       <div className="mx-auto w-full max-w-6xl space-y-6">
         <header className="space-y-1">
-          <h1 className="text-3xl font-semibold tracking-tight">Analítica</h1>
+          <span className="flex items-center gap-1"><h1 className="text-3xl font-semibold tracking-tight">Analítica</h1><AyudaPantalla titulo={AYUDA.titulo} puntos={AYUDA.puntos} /></span>
           <p className="text-sm text-muted-foreground">
             A qué horas vendes más y qué productos dejan más plata.
           </p>
@@ -79,7 +90,7 @@ export default async function AnaliticaPage() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
       <header className="space-y-1">
-        <h1 className="text-3xl font-semibold tracking-tight">Analítica</h1>
+        <span className="flex items-center gap-1"><h1 className="text-3xl font-semibold tracking-tight">Analítica</h1><AyudaPantalla titulo={AYUDA.titulo} puntos={AYUDA.puntos} /></span>
         <p className="text-sm text-muted-foreground">
           Lo que pasó en tu negocio en los últimos {DIAS} días.
         </p>

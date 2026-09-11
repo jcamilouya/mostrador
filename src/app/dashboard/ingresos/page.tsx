@@ -7,6 +7,17 @@ import { getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
 import { getIngresos, type RangoIngresos } from '@/lib/ingresos/queries';
 import { IngresosTabla } from '@/components/ingresos/IngresosTabla';
 import { formatCOP } from '@/lib/utils/format';
+import { AyudaPantalla } from '@/components/shared/AyudaPantalla';
+
+const AYUDA = {
+  titulo: "Qué ves en Ingresos",
+  puntos: [
+    "Todas las ventas que YA cobraste, de la más nueva a la más vieja.",
+    "Las mesas sin cobrar no salen aquí: todavía no es plata tuya.",
+    "Toca una venta para ver qué llevaba y cómo te pagaron.",
+    "Si te equivocaste, desde el detalle puedes anular: devuelve el inventario y descuenta el total.",
+  ],
+};
 
 export const metadata: Metadata = {
   title: 'Ingresos — Mostrador',
@@ -42,7 +53,7 @@ export default async function IngresosPage({
     <div className="mx-auto w-full max-w-5xl space-y-6">
       <header className="flex items-center justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="text-3xl font-semibold tracking-tight">Ingresos</h1>
+          <span className="flex items-center gap-1"><h1 className="text-3xl font-semibold tracking-tight">Ingresos</h1><AyudaPantalla titulo={AYUDA.titulo} puntos={AYUDA.puntos} /></span>
           <p className="text-sm text-muted-foreground">
             Toca una venta para ver el detalle.
           </p>
