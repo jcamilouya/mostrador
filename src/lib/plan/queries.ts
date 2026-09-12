@@ -17,12 +17,28 @@ export const PRECIOS = {
   pro: 35900,
 } as const;
 
+/**
+ * Lo que promete cada plan. **Cada línea de `pro` tiene que estar realmente
+ * cerrada detrás de `esPro`**, o le estamos cobrando por algo que ya tiene.
+ *
+ * "Alertas de stock bajo" estaba en la lista de Pro, pero el aviso de
+ * ingredientes por agotarse lo ve cualquiera en el Inicio, gratis. Se movió a
+ * Básico en vez de cerrarlo: avisarle a un restaurante que se está quedando sin
+ * carne evita que pierda ventas, y cobrar por eso es cobrar por no perjudicarlo.
+ *
+ * Lo que sí está cerrado de verdad, y por eso es lo único que se lista en Pro:
+ * Analítica, Reportes y Bre-B. La **carta digital** hoy es gratis y a propósito
+ * NO se anuncia como Pro: si algún día se quiere cobrar, primero hay que
+ * cerrarla (`esPro` en `/dashboard/carta` y en `getCartaPublica`) y solo después
+ * ponerla en esta lista.
+ */
 export const FEATURES = {
   basico: [
     'POS y ventas ilimitadas',
     'Inventario y productos',
     'Ingresos y gastos',
     'Dashboard del día',
+    'Alertas de stock bajo',
     '1 número de WhatsApp',
   ],
   pro: [
@@ -30,7 +46,6 @@ export const FEATURES = {
     'Analítica avanzada (horas pico, márgenes)',
     'Cobros con Bre-B sin comisión',
     'Reportes PDF y Excel',
-    'Alertas de stock bajo',
   ],
 } as const;
 

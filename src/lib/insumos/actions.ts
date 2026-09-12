@@ -6,6 +6,34 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { insumoSchema, agregarStockSchema, ajusteStockSchema } from './schemas';
 import { convertir, UNIDAD_VALUES } from './units';
 
+/**
+ * Un mínimo de arranque para un ingrediente que se crea sin que nadie lo
+ * escriba (desde una receta o desde una factura).
+ *
+ * Antes se guardaba `stock_minimo: 0`, y `estaBajo()` exige `stock_minimo > 0`
+ * para avisar: la alerta de bajo stock **no saltaba nunca** para estos
+ * ingredientes, que son casi todos. El negocio se quedaba sin fresa y la app
+ * no decía nada.
+ *
+ * La regla: un quinto de lo que cargó. Avisa cuando le queda poco, no cuando ya
+ * se acabó. Dos cuidados:
+ *
+ *  - Lo que se cuenta por unidades se redondea hacia arriba (12 gaseosas → avisa
+ *    en 3), porque un mínimo de 2,4 gaseosas no significa nada.
+ *  - El mínimo nunca pasa de la mitad del stock, para que el ingrediente no
+ *    nazca ya marcado como "por agotarse". Con 0,5 L y un piso fijo de 1 L eso
+ *    era exactamente lo que pasaba.
+ *
+ * Si cargó 0 se deja en 0 a propósito: acaba de crear el ingrediente y no tiene
+ * sentido avisarle de algo que todavía no compró. Lo puede ajustar a mano en
+ * Ingredientes, que es donde el formulario sí lo pregunta.
+ */
+function minimoSugerido(stock: number, unidad: string): number {
+  if (!(stock > 0)) return 0;
+  const quinto = unidad === 'unidad' ? Math.ceil(stock / 5) : Math.round((stock / 5) * 100) / 100;
+  return Math.min(quinto, Math.round((stock / 2) * 100) / 100);
+}
+
 export type InsumoState = {
   ok?: boolean;
   error?: string;
@@ -200,7 +228,7 @@ export async function crearInsumoRapido(input: {
       tipo: 'materia_prima',
       unidad,
       stock_actual: stock,
-      stock_minimo: 0,
+      stock_minimo: minimoSugerido(stock, unidad),
       costo_unitario: costo,
     })
     .select('id, nombre, unidad, costo_unitario, stock_actual')
@@ -693,7 +721,7 @@ export async function procesarCompraIngredientes(
           nombre,
           unidad,
           stock_actual: cantidad,
-          stock_minimo: 0,
+          stock_minimo: minimoSugerido(cantidad, unidad),
           costo_unitario: costoUnitario,
         })
         .select('id')

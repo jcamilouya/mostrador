@@ -165,8 +165,12 @@ function CategoriaChip({
 
 function ProductTable({ productos, recetas }: { productos: Producto[]; recetas: Recetas }) {
   return (
-    <div className="overflow-hidden rounded-3xl bg-card shadow-sm">
-      <table className="w-full text-sm">
+    // El contenedor redondeado NO puede llevar `overflow-hidden` a secas: con
+    // cinco columnas en un celular recortaba la última y no había forma de
+    // llegar a ella, ni deslizando. `overflow-x-auto` mantiene las esquinas
+    // redondeadas y deja arrastrar la tabla de lado.
+    <div className="overflow-x-auto rounded-3xl bg-card shadow-sm">
+      <table className="w-full min-w-[34rem] text-sm">
         <thead className="border-b bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="px-4 py-3 text-left font-medium">Producto</th>
