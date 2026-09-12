@@ -73,7 +73,18 @@ Hay tres clientes distintos — usar el correcto según el contexto:
 | `createClient()` | `lib/supabase/client.ts` | Client Components (browser, respeta RLS) |
 | `createAdminClient()` | `lib/supabase/admin.ts` | Mutations en Server Actions / API routes (bypasea RLS) |
 
-**Regla de oro**: Los INSERTs/UPDATEs/DELETEs **siempre fallan** con el cliente anon porque RLS bloquea writes de `authenticated`. Usar `createAdminClient()` **solo después de validar la identidad** con `createClient().auth.getUser()`. Nunca exponer el admin client al browser.
+**Regla de oro**: Los INSERTs/UPDATEs/DELETEs van **siempre** con `createAdminClient()`, y **solo después de validar la identidad** con `createClient().auth.getUser()`. Nunca exponer el admin client al browser.
+
+**RLS: `authenticated` es SOLO LECTURA (migración `018`, no relajar nunca).** Esto antes decía que los writes con la llave anon "siempre fallan" — **era falso y costó dos agujeros reales**, comprobados con dos cuentas de prueba contra la base de producción:
+
+1. **Robo de negocio (crítico).** La política de `usuarios` era `FOR ALL USING (id = auth.uid())`. Un dueño podía hacer `PATCH /usuarios?id=eq.<suyo>` cambiando **`empresa_id`** al de otro negocio y quedarse con su contabilidad completa: ventas, clientes, costos, gastos.
+2. **Pro gratis (grave).** `empresas_update_own` permitía `FOR UPDATE` sobre la propia empresa, y ahí viven `plan` y `plan_expira_en`. Un PATCH y quedaba en Pro hasta 2035 sin pasar por Wompi.
+
+La causa raíz de las dos es la misma: se escribió `FOR ALL` pensando "leer lo mío", pero `FOR ALL` es leer **+ insertar + actualizar + borrar**, y la llave anon vive en el navegador porque tiene que vivir ahí.
+
+La `018` deja todas las políticas de `authenticated` en `FOR SELECT` con el mismo alcance de antes. **Es seguro porque la app no escribe nunca con la llave del navegador** (se verificó archivo por archivo: los 21 sitios que escriben usan el admin client, y `service_role` no pasa por RLS). Los RPC de analítica son `SECURITY INVOKER` y solo leen, así que siguen funcionando; `ajustar_stock_*` se llaman con el admin client.
+
+**Si agregas una tabla nueva: `FOR SELECT`, nunca `FOR ALL`.** Y si alguna vez parece que hace falta permitir un write a `authenticated`, la respuesta es un Server Action con el admin client, no una política.
 
 ### Server Actions
 
@@ -93,7 +104,7 @@ export async function miAccion(prev: State, formData: FormData): Promise<State> 
 
 Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `ventas`, `venta_items`, `egresos`, `movimientos_inventario`. También `clientes`, `insumos` + `producto_receta` + `movimientos_insumos` (recetas), `pagos` + `wompi_eventos` (Wompi), `egresos_pendientes_whatsapp` (bot), `admin_log` (auditoría del super admin). El `empresa_id` es la clave de aislamiento en todas las tablas. Ver `supabase/schema.sql` y `supabase/migrations/` para el schema completo.
 
-Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos), `006_insumos` (ingredientes + recetas), …, `012_producto_insumo_link`, `013_pago_tarjeta`, `014_mesas_cuentas_abiertas`, `015_empresa_categoria`, `016_modo_practica`, `017_carta_publica`. El código degrada si falta una (reintenta sin la columna nueva o devuelve un mensaje que nombra la migración), así que se puede desplegar antes de correrlas.
+Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos), `006_insumos` (ingredientes + recetas), …, `012_producto_insumo_link`, `013_pago_tarjeta`, `014_mesas_cuentas_abiertas`, `015_empresa_categoria`, `016_modo_practica`, `017_carta_publica`, **`018_rls_solo_lectura` (seguridad, urgente)**. El código degrada si falta una (reintenta sin la columna nueva o devuelve un mensaje que nombra la migración), así que se puede desplegar antes de correrlas.
 
 **Cómo se detecta "falta la columna" (CRÍTICO — se rompió una vez):** hay que preguntar por **dos** códigos, con `faltaColumna()` de `lib/supabase/errores.ts`. PostgREST responde distinto según la operación: un **SELECT** devuelve `42703` (el error crudo de Postgres), pero un **INSERT/UPDATE** devuelve `PGRST204`, porque valida el cuerpo contra su propio caché de schema antes de mandárselo a Postgres. Mirar solo `42703` dejó el registro de negocios nuevos **totalmente roto** mientras faltaba la migración 016: el reintento nunca corría y el dueño veía "No pudimos crear tu negocio" para siempre. Además, el reintento debe soltar **solo la columna que falta** (`nombreColumnaFaltante()`), no todas las opcionales: al soltarlas en bloque, un restaurante nuevo se creaba sin su `categoria` y perdía el menú de Mesas.
 
