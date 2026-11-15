@@ -5,6 +5,7 @@ import { getProductosPOS, getVentasHoy, getTotalVentasHoy } from '@/lib/pos/quer
 import { getInsumos } from '@/lib/insumos/queries';
 import { getBrebConfig } from '@/lib/breb/queries';
 import { getMesasParaPOS } from '@/lib/salon/queries';
+import { puede } from '@/lib/auth/roles';
 import { getSesion } from '@/lib/auth/sesion';
 import { GuiaPOS } from '@/components/practica/GuiaPOS';
 import { ProductGrid } from '@/components/pos/ProductGrid';
@@ -72,6 +73,7 @@ export default async function POSPage() {
         breb={breb}
         practica={sesion?.modoPractica === true}
         mesasSalon={mesasSalon}
+        puedeCobrar={sesion ? puede(sesion.rol, 'cobrar', sesion.meseroCobra) : true}
       />
     </div>
   );

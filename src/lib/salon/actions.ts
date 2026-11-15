@@ -1,5 +1,7 @@
 'use server';
 
+import { negado } from '@/lib/auth/actor';
+
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
@@ -81,6 +83,7 @@ const planoSchema = z.object({
  *    lo demás solo se INSERTA (si el id ya existe en otro negocio, falla).
  */
 export async function guardarPlano(input: unknown): Promise<Resultado> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const parsed = planoSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'El plano tiene datos inválidos' };
@@ -209,6 +212,7 @@ const reservaSchema = z.object({
 });
 
 export async function reservarMesa(input: unknown): Promise<Resultado> {
+  { const neg = await negado('atender'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const parsed = reservaSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -243,6 +247,7 @@ export async function reservarMesa(input: unknown): Promise<Resultado> {
 }
 
 export async function quitarReserva(mesaId: string): Promise<Resultado> {
+  { const neg = await negado('atender'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   if (!z.uuid().safeParse(mesaId).success) return { ok: false, error: 'Mesa inválida' };
   const ctx = await contexto();
   if (!ctx) return { ok: false, error: 'No autenticado' };
@@ -260,6 +265,7 @@ export async function quitarReserva(mesaId: string): Promise<Resultado> {
 
 /** El mesero pidió la cuenta (amarillo) o se arrepintió (vuelve a rojo). */
 export async function pedirCuenta(ventaId: string, pedir: boolean): Promise<Resultado> {
+  { const neg = await negado('atender'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   if (!z.uuid().safeParse(ventaId).success) return { ok: false, error: 'Cuenta inválida' };
   const ctx = await contexto();
   if (!ctx) return { ok: false, error: 'No autenticado' };
@@ -284,6 +290,7 @@ export async function pedirCuenta(ventaId: string, pedir: boolean): Promise<Resu
 
 /** Pasa la cuenta de una mesa a otra que esté libre. */
 export async function moverCuenta(ventaId: string, mesaDestinoId: string): Promise<Resultado> {
+  { const neg = await negado('atender'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   if (!z.uuid().safeParse(ventaId).success || !z.uuid().safeParse(mesaDestinoId).success) {
     return { ok: false, error: 'Datos inválidos' };
   }
@@ -329,6 +336,7 @@ export async function moverCuenta(ventaId: string, mesaDestinoId: string): Promi
  * dos lo había descontado.
  */
 export async function juntarCuentas(desdeId: string, haciaId: string): Promise<Resultado> {
+  { const neg = await negado('atender'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   if (!z.uuid().safeParse(desdeId).success || !z.uuid().safeParse(haciaId).success) {
     return { ok: false, error: 'Datos inválidos' };
   }

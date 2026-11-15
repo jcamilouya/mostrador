@@ -12,7 +12,10 @@ import {
   Settings,
   UtensilsCrossed,
   QrCode,
+  ChefHat,
+  UserCog,
 } from 'lucide-react';
+import { rutaPermitida, type Rol } from '@/lib/auth/roles';
 
 export type NavItem = {
   href: string;
@@ -32,6 +35,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Inicio', icon: LayoutDashboard },
   { href: '/dashboard/pos', label: 'Vender', icon: ShoppingCart },
   { href: '/dashboard/mesas', label: 'Mesas', icon: UtensilsCrossed },
+  { href: '/dashboard/cocina', label: 'Cocina', icon: ChefHat },
   { href: '/dashboard/inventario', label: 'Productos', icon: Package },
   { href: '/dashboard/carta', label: 'Carta digital', icon: QrCode },
   { href: '/dashboard/insumos', label: 'Ingredientes', icon: Warehouse },
@@ -41,8 +45,14 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/analitica', label: 'Analítica', icon: BarChart3 },
   { href: '/dashboard/reportes', label: 'Reportes', icon: FileText },
   { href: '/dashboard/plan', label: 'Plan', icon: Sparkles },
+  { href: '/dashboard/equipo', label: 'Equipo', icon: UserCog },
   { href: '/dashboard/configuracion', label: 'Ajustes', icon: Settings },
 ];
+
+/** El menú lateral de cada rol: solo lo que puede abrir (ver `lib/auth/roles.ts`). */
+export function navDe(rol: Rol = 'dueno'): NavItem[] {
+  return NAV_ITEMS.filter((i) => rutaPermitida(rol, i.href));
+}
 
 const ITEM_INICIO: NavItem = { href: '/dashboard', label: 'Inicio', icon: LayoutDashboard };
 const ITEM_VENDER: NavItem = { href: '/dashboard/pos', label: 'Vender', icon: ShoppingCart };
@@ -57,6 +67,8 @@ const ITEM_ANALITICA: NavItem = { href: '/dashboard/analitica', label: 'Analíti
 const ITEM_REPORTES: NavItem = { href: '/dashboard/reportes', label: 'Reportes', icon: FileText };
 const ITEM_PLAN: NavItem = { href: '/dashboard/plan', label: 'Plan', icon: Sparkles };
 const ITEM_AJUSTES: NavItem = { href: '/dashboard/configuracion', label: 'Ajustes', icon: Settings };
+const ITEM_COCINA: NavItem = { href: '/dashboard/cocina', label: 'Cocina', icon: ChefHat };
+const ITEM_EQUIPO: NavItem = { href: '/dashboard/equipo', label: 'Equipo', icon: UserCog };
 
 /** Negocios que atienden en mesa: el cuarto botón del celular es Mesas. */
 const CON_MESAS = ['restaurante', 'cafeteria', 'cafetería', 'bar', 'panaderia', 'panadería'];
@@ -77,16 +89,20 @@ export function esNegocioDeMesas(categoria?: string | null): boolean {
  * Analítica NO va aquí: está detrás del plan Pro y un usuario Básico se topaba
  * con una pared de pago como cuarto botón principal.
  */
-export function bottomPrimary(categoria?: string | null): NavItem[] {
+export function bottomPrimary(categoria?: string | null, rol: Rol = 'dueno'): NavItem[] {
+  // El equipo ve sus herramientas, no las del dueño.
+  if (rol === 'mesero') return [ITEM_MESAS, ITEM_VENDER, ITEM_COCINA];
+  if (rol === 'caja') return [ITEM_VENDER, ITEM_MESAS, ITEM_COCINA, ITEM_CLIENTES];
   const cuarto = esNegocioDeMesas(categoria) ? ITEM_MESAS : ITEM_PRODUCTOS;
   return [ITEM_INICIO, ITEM_VENDER, ITEM_GASTOS, cuarto];
 }
 
 /** El resto, en el menú "Más": todo lo que no quedó fijo abajo. */
-export function moreItems(categoria?: string | null): NavItem[] {
-  const fijos = new Set(bottomPrimary(categoria).map((i) => i.href));
+export function moreItems(categoria?: string | null, rol: Rol = 'dueno'): NavItem[] {
+  const fijos = new Set(bottomPrimary(categoria, rol).map((i) => i.href));
   return [
     ITEM_MESAS,
+    ITEM_COCINA,
     ITEM_PRODUCTOS,
     ITEM_CARTA,
     ITEM_INGREDIENTES,
@@ -95,6 +111,7 @@ export function moreItems(categoria?: string | null): NavItem[] {
     ITEM_ANALITICA,
     ITEM_REPORTES,
     ITEM_PLAN,
+    ITEM_EQUIPO,
     ITEM_AJUSTES,
-  ].filter((i) => !fijos.has(i.href));
+  ].filter((i) => !fijos.has(i.href) && rutaPermitida(rol, i.href));
 }

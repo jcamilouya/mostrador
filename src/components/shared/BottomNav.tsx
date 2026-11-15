@@ -5,15 +5,24 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { MoreHorizontal, X, ShieldCheck } from 'lucide-react';
 import { bottomPrimary, moreItems } from './NavItems';
+import type { Rol } from '@/lib/auth/roles';
 import { SignOutButton } from './SignOutButton';
 import { ThemeToggle } from './ThemeToggle';
 
-export function BottomNav({ esAdmin, categoria }: { esAdmin?: boolean; categoria?: string | null }) {
+export function BottomNav({
+  esAdmin,
+  categoria,
+  rol = 'dueno',
+}: {
+  esAdmin?: boolean;
+  categoria?: string | null;
+  rol?: Rol;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const PRIMARY = bottomPrimary(categoria);
-  const MAS = moreItems(categoria);
+  const PRIMARY = bottomPrimary(categoria, rol);
+  const MAS = moreItems(categoria, rol);
   const moreActivo = MAS.some((i) => pathname.startsWith(i.href));
 
   return (

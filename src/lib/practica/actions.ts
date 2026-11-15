@@ -1,5 +1,7 @@
 'use server';
 
+import { negado } from '@/lib/auth/actor';
+
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -47,11 +49,13 @@ async function cambiarPractica(valor: boolean): Promise<{ ok: boolean; error?: s
 
 /** "Ya entendí, empezar de verdad": a partir de aquí las ventas sí se guardan. */
 export async function terminarPractica() {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   return cambiarPractica(false);
 }
 
 /** Volver a practicar (por ejemplo, para enseñarle a un empleado nuevo). */
 export async function volverAPracticar() {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   return cambiarPractica(true);
 }
 

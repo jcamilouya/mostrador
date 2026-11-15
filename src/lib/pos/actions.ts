@@ -1,5 +1,8 @@
 'use server';
 
+import { getActor, negado } from '@/lib/auth/actor';
+import { crearComanda } from '@/lib/comandas/crear';
+
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
@@ -25,6 +28,8 @@ const itemSchema = z.object({
   variante: z.string().max(80).nullable().optional(),
   // Bebida del Inventario elegida para esta línea (módulo Bebidas).
   insumo_extra_id: z.uuid().nullable().optional(),
+  // "Sin cebolla"… sale en la comanda (migración 023).
+  nota: z.string().trim().max(140).nullable().optional(),
 });
 
 const ventaSchema = z.object({
@@ -39,9 +44,12 @@ const ventaSchema = z.object({
   cliente_id: z.uuid().optional().nullable(),
   // Llave única por intento de cobro: evita duplicar la venta si se reintenta.
   idempotency_key: z.string().max(80).optional(),
+  // Pedido para llevar: además de cobrar, sale su comanda a cocina (023).
+  comanda: z.object({ titulo: z.string().trim().min(1).max(60) }).optional().nullable(),
 });
 
 export async function registrarVenta(input: unknown): Promise<VentaResult> {
+  { const neg = await negado('cobrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const parsed = ventaSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -190,6 +198,7 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
   // Insertar items. La columna insumo_extra_id (bebida elegida) solo se envía
   // cuando la venta la usa, para no depender de la migración 008 en el resto.
   const usaBebidas = items.some((i) => i.insumo_extra_id);
+  const usaNotas = items.some((i) => i.nota);
   const itemsRows = items.map((i) => ({
     venta_id: venta.id,
     producto_id: i.producto_id,
@@ -199,6 +208,8 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
     precio_compra: i.precio_compra,
     subtotal: i.cantidad * i.precio_unitario,
     ...(usaBebidas ? { insumo_extra_id: i.insumo_extra_id ?? null } : {}),
+    // La nota (023) solo se envía si alguna línea la trae.
+    ...(usaNotas ? { nota: i.nota || null } : {}),
   }));
 
   const { error: itemsErr } = await admin.from('venta_items').insert(itemsRows);
@@ -261,6 +272,22 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
     }
   }
 
+  // Para llevar: la comanda sale a cocina en el mismo paso del cobro. Si la
+  // comanda falla, la venta YA quedó (la plata entró): se avisa para marchar a mano.
+  let comanda: number | null = null;
+  if (parsed.data.comanda) {
+    const actor = await getActor();
+    comanda = await crearComanda(admin, {
+      empresaId,
+      ventaId: venta.id,
+      tipo: 'pedido',
+      titulo: parsed.data.comanda.titulo,
+      creadoPor: actor?.nombre ?? null,
+      items: items.map((i) => ({ cantidad: i.cantidad, nombre: i.nombre, nota: i.nota || null })),
+    });
+    revalidatePath('/dashboard/cocina');
+  }
+
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/pos');
   revalidatePath('/dashboard/inventario');
@@ -273,5 +300,6 @@ export async function registrarVenta(input: unknown): Promise<VentaResult> {
     ventaId: venta.id,
     numero: venta.numero_venta,
     total: Number(venta.total),
+    comanda,
   };
 }

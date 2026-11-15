@@ -15,6 +15,19 @@ export type LineaCuenta = {
   precio_unitario: number;
   precio_compra: number;
   insumo_extra_id: string | null;
+  /** "Sin cebolla"… (023). */
+  nota: string | null;
+  /** Ya se mandó a cocina (023). Sin la migración, todo cuenta como marchado. */
+  marchado: boolean;
+};
+
+export type DomicilioCuenta = {
+  nombre: string;
+  telefono: string;
+  direccion: string;
+  canal: 'llamada' | 'whatsapp';
+  pago: 'efectivo' | 'tarjeta' | 'breb' | 'transferencia';
+  nota?: string | null;
 };
 
 export type CuentaAbierta = {
@@ -27,11 +40,18 @@ export type CuentaAbierta = {
   pedidaEn: string | null;
   total: number;
   abiertaDesde: string;
+  /** mesa | llevar | domicilio (023), o null en cuentas viejas. */
+  tipo: 'mesa' | 'llevar' | 'domicilio' | null;
+  domicilio: DomicilioCuenta | null;
+  /** Domicilio: sigue en cocina o ya salió. */
+  entrega: 'cocina' | 'camino' | null;
   /** El cliente asociado a la cuenta, si el mesero lo eligió al abrirla. */
   cliente: { id: string; nombre: string; telefono: string | null } | null;
   items: LineaCuenta[];
 };
 
+const ITEMS_COCINA =
+  'venta_items (producto_id, nombre_producto, cantidad, precio_unitario, precio_compra, insumo_extra_id, nota, marchado_en, productos (nombre, variantes))';
 const ITEMS =
   'venta_items (producto_id, nombre_producto, cantidad, precio_unitario, precio_compra, insumo_extra_id, productos (nombre, variantes))';
 const ITEMS_SIMPLE =
@@ -44,6 +64,7 @@ const BASE = 'id, numero_venta, mesa, total, created_at, cliente_id, clientes (n
  * Mesas NUNCA debe quedar vacía con cuentas abiertas de verdad.
  */
 const CONSULTAS = [
+  `${BASE}, mesa_id, cuenta_pedida_en, tipo_pedido, domicilio, entrega_estado, ${ITEMS_COCINA}`,
   `${BASE}, mesa_id, cuenta_pedida_en, ${ITEMS}`,
   `${BASE}, ${ITEMS}`,
   `${BASE}, ${ITEMS_SIMPLE}`,
@@ -97,6 +118,9 @@ export async function getCuentasAbiertas(empresaId: string): Promise<CuentaAbier
     mesa: (v.mesa as string) || `Cuenta #${v.numero_venta}`,
     mesaId: (v.mesa_id as string | null) ?? null,
     pedidaEn: (v.cuenta_pedida_en as string | null) ?? null,
+    tipo: (v.tipo_pedido as CuentaAbierta['tipo']) ?? null,
+    domicilio: (v.domicilio as DomicilioCuenta | null) ?? null,
+    entrega: (v.entrega_estado as CuentaAbierta['entrega']) ?? null,
     total: Number(v.total) || 0,
     abiertaDesde: v.created_at as string,
     cliente: (() => {
@@ -120,6 +144,9 @@ export async function getCuentasAbiertas(empresaId: string): Promise<CuentaAbier
         precio_unitario: Number(i.precio_unitario) || 0,
         precio_compra: Number(i.precio_compra) || 0,
         insumo_extra_id: (i.insumo_extra_id as string) ?? null,
+        nota: (i.nota as string | null) ?? null,
+        // Sin la columna (023 sin correr) no hay "sin marchar": todo está en cocina.
+        marchado: !('marchado_en' in i) || i.marchado_en != null,
       }),
     ),
   }));

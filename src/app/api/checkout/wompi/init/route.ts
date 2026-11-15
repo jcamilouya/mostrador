@@ -1,3 +1,4 @@
+import { negado } from '@/lib/auth/actor';
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
@@ -24,6 +25,8 @@ export async function POST(req: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+  const neg = await negado('administrar');
+  if (neg) return NextResponse.json({ error: neg }, { status: 403 });
 
   const { data: usuario } = await supabase
     .from('usuarios')

@@ -1,5 +1,7 @@
 'use server';
 
+import { negado } from '@/lib/auth/actor';
+
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
@@ -49,6 +51,7 @@ export async function guardarCarta(
   _prev: CartaState,
   formData: FormData,
 ): Promise<CartaState> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const ctx = await contexto();
   if (!ctx) return { error: 'No autenticado' };
 
@@ -98,6 +101,7 @@ export async function alternarProductoEnCarta(
   productoId: string,
   enCarta: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const ctx = await contexto();
   if (!ctx) return { ok: false, error: 'No autenticado' };
 

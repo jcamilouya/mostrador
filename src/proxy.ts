@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
+import { inicioDe, normalizarRol, rutaPermitida } from '@/lib/auth/roles';
 
 /**
  * Guardia de rutas que corre ANTES de renderizar.
@@ -39,6 +40,18 @@ export async function proxy(request: NextRequest) {
 
   if (user && isAuthRoute) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  // Equipo (023): el mesero y la caja solo entran a sus pantallas. El rol
+  // viene del token (`app_metadata`, que solo el servidor puede escribir al
+  // crear la persona), así que esto NO consulta la base en cada clic. Es el
+  // cinturón de las pantallas; el de los datos son los Server Actions, que
+  // leen el rol de la base (`lib/auth/actor.ts`).
+  if (user && pathname.startsWith('/dashboard')) {
+    const rol = normalizarRol((user.app_metadata as Record<string, unknown> | undefined)?.rol);
+    if (!rutaPermitida(rol, pathname)) {
+      return NextResponse.redirect(new URL(inicioDe(rol), request.url));
+    }
   }
 
   // Antes aquí se consultaba `usuarios` para mandar a /onboarding a quien no

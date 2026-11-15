@@ -1,5 +1,7 @@
 'use server';
 
+import { negado } from '@/lib/auth/actor';
+
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -76,6 +78,7 @@ function refrescar() {
 }
 
 export async function crearInsumo(_prev: InsumoState, formData: FormData): Promise<InsumoState> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return { error: 'No autenticado' };
 
@@ -186,6 +189,7 @@ export async function crearInsumoRapido(input: {
   stock_actual?: number;
   costo_unitario?: number;
 }): Promise<{ ok: boolean; error?: string; insumo?: InsumoRapido; yaExistia?: boolean }> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return { ok: false, error: 'No autenticado' };
 
@@ -270,6 +274,7 @@ export async function vincularProductoConInsumo(
   productoId: string,
   stockReal: number,
 ): Promise<{ ok: boolean; error?: string }> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return { ok: false, error: 'No autenticado' };
   const stock = Number(stockReal);
@@ -354,6 +359,7 @@ export async function vincularProductoConInsumo(
 export async function desvincularProducto(
   productoId: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return { ok: false, error: 'No autenticado' };
 
@@ -396,6 +402,7 @@ export async function crearProductoDesdeBebida(
   insumoId: string,
   precioVenta: number,
 ): Promise<{ ok: boolean; error?: string }> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return { ok: false, error: 'No autenticado' };
   const precio = Number(precioVenta);
@@ -469,6 +476,7 @@ export async function actualizarInsumo(
   _prev: InsumoState,
   formData: FormData,
 ): Promise<InsumoState> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return { error: 'No autenticado' };
 
@@ -527,6 +535,7 @@ export async function actualizarInsumo(
 }
 
 export async function archivarInsumo(id: string): Promise<void> {
+  if (await negado('administrar')) return; // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return;
   const admin = createAdminClient();
@@ -540,6 +549,7 @@ export async function archivarInsumo(id: string): Promise<void> {
 
 /** Agregar stock (compra). Convierte desde la unidad comprada a la del insumo. */
 export async function agregarStock(_prev: InsumoState, formData: FormData): Promise<InsumoState> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return { error: 'No autenticado' };
 
@@ -605,6 +615,7 @@ export async function agregarStock(_prev: InsumoState, formData: FormData): Prom
 
 /** Ajuste manual (merma/corrección): fija el nuevo stock. */
 export async function ajustarStock(_prev: InsumoState, formData: FormData): Promise<InsumoState> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return { error: 'No autenticado' };
 
@@ -661,6 +672,7 @@ export type LineaCompra = {
 export async function procesarCompraIngredientes(
   lineas: LineaCompra[],
 ): Promise<{ ok: boolean; agregados?: number; error?: string }> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return { ok: false, error: 'No autenticado' };
   if (!Array.isArray(lineas) || lineas.length === 0) return { ok: true, agregados: 0 };

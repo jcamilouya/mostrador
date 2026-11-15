@@ -2,6 +2,12 @@
 
 import { create } from 'zustand';
 import type { CartItem } from '@/lib/pos/types';
+import type { DomicilioCuenta } from '@/lib/mesas/queries';
+
+/** Pedido que no es de mesa (023): para llevar o domicilio. */
+export type PedidoEspecial =
+  | { tipo: 'llevar'; nombre: string | null }
+  | { tipo: 'domicilio'; datos: DomicilioCuenta };
 
 type ClienteSel = { id: string; nombre: string; telefono: string | null };
 
@@ -18,6 +24,8 @@ type CartState = {
   cobrarAlAbrir: boolean;
   /** Cómo estaba la cuenta al cargarla (ver `lib/mesas/huella.ts`). */
   huella: string | null;
+  /** Para llevar o domicilio (023). Null = venta normal o mesa. */
+  pedido: PedidoEspecial | null;
   add: (item: Omit<CartItem, 'cantidad' | 'lineId'>) => void;
   setCantidad: (lineId: string, cantidad: number) => void;
   remove: (lineId: string) => void;
@@ -34,6 +42,10 @@ type CartState = {
   }) => void;
   /** Empieza un pedido nuevo en una mesa libre del plano. */
   prepararMesa: (mesa: { id: string; nombre: string }) => void;
+  /** Empieza un pedido para llevar o a domicilio. */
+  prepararPedido: (p: PedidoEspecial) => void;
+  /** Le pone (o quita) una nota a una línea: "sin cebolla". */
+  setNota: (lineId: string, nota: string | null) => void;
   setCobrarAlAbrir: (v: boolean) => void;
   setMesa: (mesa: string | null) => void;
   clear: () => void;
@@ -41,14 +53,17 @@ type CartState = {
   totalItems: () => number;
 };
 
-// Una línea por producto + opción elegida (+ bebida elegida).
+// Una línea por producto + opción elegida (+ bebida elegida) (+ nota): dos
+// hamburguesas, una "sin cebolla", son dos líneas para que cocina lo vea.
 export function calcularLineId(item: {
   producto_id: string;
   variante?: string | null;
   insumo_extra_id?: string | null;
+  nota?: string | null;
 }): string {
   let id = item.variante ? `${item.producto_id}::${item.variante}` : item.producto_id;
   if (item.insumo_extra_id) id += `::b:${item.insumo_extra_id}`;
+  if (item.nota) id += `::n:${item.nota}`;
   return id;
 }
 
@@ -60,6 +75,7 @@ export const useCart = create<CartState>((set, get) => ({
   mesaId: null,
   cobrarAlAbrir: false,
   huella: null,
+  pedido: null,
   add: (item) =>
     set((state) => {
       const lineId = calcularLineId(item);
@@ -114,6 +130,7 @@ export const useCart = create<CartState>((set, get) => ({
       cliente: cuenta.cliente ?? null,
       cobrarAlAbrir: cuenta.cobrar === true,
       huella: cuenta.huella ?? null,
+      pedido: null,
     }),
   // Lo que hubiera en el carrito se descarta: era de otra venta.
   prepararMesa: (mesa) =>
@@ -125,6 +142,40 @@ export const useCart = create<CartState>((set, get) => ({
       mesaId: mesa.id,
       cobrarAlAbrir: false,
       huella: null,
+      pedido: null,
+    }),
+  prepararPedido: (p) =>
+    set({
+      items: [],
+      cliente: null,
+      cuentaId: null,
+      mesa: p.tipo === 'llevar' ? (p.nombre ? `Para llevar · ${p.nombre}` : 'Para llevar') : `Domicilio · ${p.datos.nombre}`,
+      mesaId: null,
+      cobrarAlAbrir: false,
+      huella: null,
+      pedido: p,
+    }),
+  setNota: (lineId, nota) =>
+    set((state) => {
+      const linea = state.items.find((i) => i.lineId === lineId);
+      if (!linea) return state;
+      const limpia = nota?.trim() || null;
+      const nuevoId = calcularLineId({ ...linea, nota: limpia });
+      if (nuevoId === lineId) return state;
+      // Si ya había una línea igual con esa nota, se juntan.
+      const destino = state.items.find((i) => i.lineId === nuevoId);
+      if (destino) {
+        return {
+          items: state.items
+            .filter((i) => i.lineId !== lineId)
+            .map((i) => (i.lineId === nuevoId ? { ...i, cantidad: i.cantidad + linea.cantidad } : i)),
+        };
+      }
+      return {
+        items: state.items.map((i) =>
+          i.lineId === lineId ? { ...i, nota: limpia, lineId: nuevoId, enCocina: 0 } : i,
+        ),
+      };
     }),
   setCobrarAlAbrir: (v) => set({ cobrarAlAbrir: v }),
   setMesa: (mesa) => set({ mesa }),
@@ -137,6 +188,7 @@ export const useCart = create<CartState>((set, get) => ({
       mesaId: null,
       cobrarAlAbrir: false,
       huella: null,
+      pedido: null,
     }),
   total: () => get().items.reduce((acc, i) => acc + i.cantidad * i.precio_venta, 0),
   totalItems: () => get().items.reduce((acc, i) => acc + i.cantidad, 0),

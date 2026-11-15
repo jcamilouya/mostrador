@@ -1,5 +1,7 @@
 'use server';
 
+import { negado } from '@/lib/auth/actor';
+
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
@@ -66,6 +68,7 @@ async function subirImagenProducto(
 }
 
 export async function crearProducto(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const session = await requireEmpresaId();
   if (!session) redirect('/login');
 
@@ -134,6 +137,7 @@ export async function actualizarProducto(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const session = await requireEmpresaId();
   if (!session) redirect('/login');
 
@@ -241,6 +245,7 @@ export type LineaCarta = {
 export async function crearProductosDesdeCarta(
   lineas: LineaCarta[],
 ): Promise<{ ok: boolean; creados?: number; omitidos?: number; error?: string }> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const session = await requireEmpresaId();
   if (!session) return { ok: false, error: 'No autenticado' };
   if (!Array.isArray(lineas) || lineas.length === 0) {
@@ -332,6 +337,7 @@ export async function crearProductosDesdeCarta(
 }
 
 export async function archivarProducto(id: string): Promise<void> {
+  if (await negado('administrar')) return; // permiso por rol (023)
   const session = await requireEmpresaId();
   if (!session) return;
   const admin = createAdminClient();
@@ -344,6 +350,7 @@ export async function archivarProducto(id: string): Promise<void> {
 }
 
 export async function eliminarProducto(id: string): Promise<void> {
+  if (await negado('administrar')) return; // permiso por rol (023)
   const session = await requireEmpresaId();
   if (!session) return;
   const admin = createAdminClient();
@@ -357,6 +364,7 @@ export async function crearCategoria(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState & { categoria?: CategoriaCreada }> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const session = await requireEmpresaId();
   if (!session) redirect('/login');
 

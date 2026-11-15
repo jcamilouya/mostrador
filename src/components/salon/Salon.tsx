@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { LayoutGrid, List, Pencil, X } from 'lucide-react';
+import { Bike, ChefHat, LayoutGrid, List, Pencil, Printer, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { anularCuenta } from '@/lib/mesas/actions';
+import { anularCuenta, domicilioSalio, marcharCuenta } from '@/lib/mesas/actions';
 import { juntarCuentas, moverCuenta, pedirCuenta, quitarReserva, reservarMesa } from '@/lib/salon/actions';
 import {
   claveNombre,
@@ -20,7 +20,8 @@ import {
   type Zona,
 } from '@/lib/salon/modelo';
 import type { CuentaAbierta } from '@/lib/mesas/queries';
-import { lineasParaCarrito } from '@/lib/mesas/carrito';
+import { lineasParaCarrito, sinMarchar } from '@/lib/mesas/carrito';
+import { imprimirHTML, ticketCuenta } from '@/lib/comandas/ticket';
 import { huellaCuenta } from '@/lib/mesas/huella';
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
@@ -28,6 +29,36 @@ import { MesasManager } from '@/components/mesas/MesasManager';
 import { Plano, type InfoMesa } from './Plano';
 import { PanelMesa } from './PanelMesa';
 import { EditorSalon, nuevoId } from './EditorSalon';
+import { NuevoPedido } from './NuevoPedido';
+
+/** Lo que puede hacer quien usa la pantalla (023). */
+export type PermisosSalon = { cobrar: boolean; anular: boolean; plano: boolean };
+
+const PAGO_NOMBRE = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', breb: 'Bre-B', transferencia: 'Transferencia' } as const;
+
+/** Imprime la cuenta (precuenta) en este equipo. */
+function imprimirCuenta(negocio: string, c: CuentaAbierta) {
+  const porNombre = new Map<string, { cantidad: number; nombre: string; subtotal: number }>();
+  for (const i of c.items) {
+    const ya = porNombre.get(i.nombre_producto);
+    const sub = i.cantidad * i.precio_unitario;
+    porNombre.set(
+      i.nombre_producto,
+      ya ? { ...ya, cantidad: ya.cantidad + i.cantidad, subtotal: ya.subtotal + sub } : { cantidad: i.cantidad, nombre: i.nombre_producto, subtotal: sub },
+    );
+  }
+  const d = c.domicilio;
+  const ok = imprimirHTML(
+    ticketCuenta({
+      negocio,
+      titulo: c.mesa,
+      detalle: d ? `${d.direccion} · ${d.telefono} · Paga: ${PAGO_NOMBRE[d.pago]}` : null,
+      items: [...porNombre.values()],
+      total: c.total,
+    }),
+  );
+  if (!ok) toast.error('Este navegador no dejó imprimir.');
+}
 
 type Elegir = { tipo: 'mover' | 'juntar'; cuenta: CuentaAbierta; origen: PiezaConReserva };
 type Filtro = 'todas' | EstadoMesa;
@@ -46,16 +77,22 @@ export function Salon({
   piezas,
   cuentas,
   generadoEn,
+  permisos,
+  negocio,
 }: {
   zonas: Zona[];
   piezas: PiezaConReserva[];
   cuentas: CuentaAbierta[];
+  permisos: PermisosSalon;
+  /** Nombre del negocio, para el ticket de la cuenta. */
+  negocio: string;
   /** Hora del servidor al pintar: así servidor y navegador calculan igual. */
   generadoEn: number;
 }) {
   const router = useRouter();
   const prepararMesa = useCart((s) => s.prepararMesa);
   const cargarCuenta = useCart((s) => s.cargarCuenta);
+  const prepararPedido = useCart((s) => s.prepararPedido);
 
   const [ahora, setAhora] = useState(generadoEn);
   const [vista, setVista] = useState<'plano' | 'lista'>('plano');
@@ -100,7 +137,7 @@ export function Salon({
    * para que "Mesa 4" abierta ayer aparezca en la Mesa 4 del dibujo. El resto
    * (para llevar, domicilio, nombres libres) va aparte.
    */
-  const { cuentaDe, otras } = useMemo(() => {
+  const { cuentaDe, otras, domicilios } = useMemo(() => {
     const porMesa = new Map<string, CuentaAbierta>();
     const idsMesa = new Set(mesas.map((m) => m.id));
     const sueltas: CuentaAbierta[] = [];
@@ -115,7 +152,11 @@ export function Salon({
       if (id && !porMesa.has(id)) porMesa.set(id, c);
       else resto.push(c);
     }
-    return { cuentaDe: porMesa, otras: resto };
+    return {
+      cuentaDe: porMesa,
+      otras: resto.filter((c) => c.tipo !== 'domicilio'),
+      domicilios: resto.filter((c) => c.tipo === 'domicilio'),
+    };
   }, [cuentas, mesas]);
 
   function estadoDe(p: PiezaConReserva): EstadoMesa {
@@ -131,6 +172,7 @@ export function Salon({
     return {
       estado: estadoDe(p),
       total: c?.total,
+      pendientes: c ? sinMarchar(c) : 0,
       minutos: c
         ? Math.max(0, Math.floor((ahora - new Date(c.abiertaDesde).getTime()) / 60000))
         : undefined,
@@ -164,6 +206,16 @@ export function Salon({
   // ── Sin plano todavía ──
 
   if (zonas.length === 0) {
+    if (!permisos.plano) {
+      return (
+        <div className="space-y-6">
+          <p className="rounded-3xl bg-card p-6 text-sm text-muted-foreground shadow-sm">
+            El dueño todavía no ha dibujado el salón. Mientras tanto, las cuentas abiertas están aquí abajo.
+          </p>
+          {cuentas.length > 0 && <MesasManager cuentas={cuentas} />}
+        </div>
+      );
+    }
     return (
       <div className="space-y-6">
         <CrearSalon
@@ -287,7 +339,30 @@ export function Salon({
       reservar: (r: { nombre: string; en: string; personas: number | null }) =>
         correr(() => reservarMesa({ mesa_id: p.id, ...r }), `${p.nombre} reservada para ${r.nombre}`),
       quitarReserva: () => correr(() => quitarReserva(p.id), 'Reserva quitada'),
+      marchar: () =>
+        cuenta &&
+        startAccion(async () => {
+          const r = await marcharCuenta(cuenta.id);
+          if (!r.ok) return void toast.error(r.error);
+          toast.success(r.comanda ? `Comanda #${r.comanda} a cocina` : 'No había nada por marchar');
+          router.refresh();
+        }),
+      imprimirCuenta: () => cuenta && imprimirCuenta(negocio, cuenta),
     };
+  }
+
+  /** Abrir un domicilio u otra cuenta en el POS para agregar o cobrar. */
+  function abrirEnPOS(c: CuentaAbierta, cobrar = false) {
+    cargarCuenta({
+      id: c.id,
+      mesa: c.mesa,
+      mesaId: null,
+      cliente: c.cliente,
+      items: lineasParaCarrito(c),
+      huella: huellaCuenta(c.items),
+      cobrar,
+    });
+    ir('/dashboard/pos');
   }
 
   const vacias = {
@@ -300,6 +375,8 @@ export function Salon({
     anular: () => {},
     reservar: () => {},
     quitarReserva: () => {},
+    marchar: () => {},
+    imprimirCuenta: () => {},
   };
 
   const listaMesas = mesas
@@ -333,7 +410,18 @@ export function Salon({
             );
           })}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <NuevoPedido
+            puedeLlevar={permisos.cobrar}
+            onLlevar={(nombre) => {
+              prepararPedido({ tipo: 'llevar', nombre });
+              ir('/dashboard/pos');
+            }}
+            onDomicilio={(datos) => {
+              prepararPedido({ tipo: 'domicilio', datos });
+              ir('/dashboard/pos');
+            }}
+          />
           <div className="flex rounded-xl bg-secondary p-0.5">
             {(['plano', 'lista'] as const).map((v) => (
               <button
@@ -350,17 +438,20 @@ export function Salon({
               </button>
             ))}
           </div>
-          <Button
-            variant="outline"
-            className="h-9 rounded-xl gap-1.5"
-            onClick={() => {
-              setAbierta(null);
-              setElegir(null);
-              setEditor({ zonas, piezas: piezas.map(sinReserva) });
-            }}
-          >
-            <Pencil className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Editar plano</span>
-          </Button>
+          {permisos.plano && (
+            <Button
+              variant="outline"
+              className="h-9 rounded-xl gap-1.5"
+              aria-label="Editar plano"
+              onClick={() => {
+                setAbierta(null);
+                setElegir(null);
+                setEditor({ zonas, piezas: piezas.map(sinReserva) });
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Editar plano</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -449,6 +540,121 @@ export function Salon({
         </div>
       )}
 
+      {/* Domicilios abiertos: en cocina → en camino → se cobran al entregar */}
+      {domicilios.length > 0 && (
+        <section className="space-y-2 pt-2">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">
+            <Bike className="h-4 w-4" /> Domicilios
+          </h2>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {domicilios.map((c) => {
+              const d = c.domicilio;
+              const pend = sinMarchar(c);
+              return (
+                <div key={c.id} className="space-y-2 rounded-2xl bg-card p-4 shadow-sm" data-domicilio={c.id}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold">{d?.nombre ?? c.mesa}</p>
+                      {d && (
+                        <p className="text-xs text-muted-foreground">
+                          {d.direccion} · {d.telefono} · {d.canal === 'whatsapp' ? 'WhatsApp' : 'Llamada'}
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        c.entrega === 'camino'
+                          ? 'bg-[var(--ingreso)]/15 text-[var(--ingreso)]'
+                          : 'bg-[var(--utilidad)]/20'
+                      }`}
+                    >
+                      {pend > 0 ? 'Sin marchar' : c.entrega === 'camino' ? 'En camino' : 'En cocina'}
+                    </span>
+                  </div>
+                  <p className="text-lg font-bold tabular-nums">
+                    {formatCOP(c.total)}
+                    {d && <span className="ml-1.5 text-xs font-normal text-muted-foreground">paga {PAGO_NOMBRE[d.pago].toLowerCase()}</span>}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {pend > 0 && (
+                      <Button
+                        size="sm"
+                        className="rounded-xl gap-1"
+                        disabled={ocupado}
+                        onClick={() =>
+                          startAccion(async () => {
+                            const r = await marcharCuenta(c.id);
+                            if (!r.ok) return void toast.error(r.error);
+                            toast.success(r.comanda ? `Comanda #${r.comanda} a cocina` : 'Listo');
+                            router.refresh();
+                          })
+                        }
+                      >
+                        <ChefHat className="h-3.5 w-3.5" /> Marchar
+                      </Button>
+                    )}
+                    {c.entrega !== 'camino' && pend === 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-xl"
+                        disabled={ocupado}
+                        onClick={() =>
+                          startAccion(async () => {
+                            const r = await domicilioSalio(c.id);
+                            if (!r.ok) return void toast.error(r.error);
+                            toast.success(`${d?.nombre ?? 'El domicilio'} va en camino`);
+                            router.refresh();
+                          })
+                        }
+                      >
+                        Salió
+                      </Button>
+                    )}
+                    {permisos.cobrar && (
+                      <Button size="sm" variant="outline" className="rounded-xl" disabled={ocupado} onClick={() => abrirEnPOS(c, true)}>
+                        Cobrar
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" className="rounded-xl" disabled={ocupado} onClick={() => abrirEnPOS(c)}>
+                      Agregar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="rounded-xl"
+                      aria-label="Imprimir cuenta del domicilio"
+                      onClick={() => imprimirCuenta(negocio, c)}
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                    </Button>
+                    {permisos.anular && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="rounded-xl text-muted-foreground hover:text-[var(--egreso)]"
+                        disabled={ocupado}
+                        onClick={() => {
+                          if (!confirm(`¿Anular el domicilio de ${d?.nombre ?? c.mesa}?`)) return;
+                          startAccion(async () => {
+                            const r = await anularCuenta(c.id);
+                            if (!r.ok) return void toast.error(r.error ?? 'No se pudo');
+                            toast.success('Domicilio anulado');
+                            router.refresh();
+                          });
+                        }}
+                      >
+                        Anular
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Cuentas que no están en una mesa del plano */}
       {otras.length > 0 && (
         <section className="space-y-2 pt-2">
@@ -459,17 +665,7 @@ export function Salon({
                 key={c.id}
                 type="button"
                 disabled={Boolean(elegir)}
-                onClick={() => {
-                  cargarCuenta({
-                    id: c.id,
-                    mesa: c.mesa,
-                    mesaId: null,
-                    cliente: c.cliente,
-                    items: lineasParaCarrito(c),
-                    huella: huellaCuenta(c.items),
-                  });
-                  ir('/dashboard/pos');
-                }}
+                onClick={() => abrirEnPOS(c)}
                 className="flex items-center justify-between gap-3 rounded-2xl bg-card px-4 py-3 text-left shadow-sm disabled:opacity-40"
               >
                 <span className="min-w-0">
@@ -493,6 +689,7 @@ export function Salon({
         ahora={ahora}
         ocupado={ocupado}
         acciones={piezaAbierta ? accionesDe(piezaAbierta) : vacias}
+        permisos={permisos}
         onCerrar={() => setAbierta(null)}
       />
     </div>

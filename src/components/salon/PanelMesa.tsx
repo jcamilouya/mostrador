@@ -4,9 +4,11 @@ import { useState } from 'react';
 import {
   ArrowRightLeft,
   CalendarClock,
+  ChefHat,
   Combine,
   Loader2,
   Plus,
+  Printer,
   Receipt,
   Trash2,
   Users,
@@ -29,7 +31,12 @@ export type AccionesMesa = {
   anular: () => void;
   reservar: (r: { nombre: string; en: string; personas: number | null }) => void;
   quitarReserva: () => void;
+  marchar: () => void;
+  imprimirCuenta: () => void;
 };
+
+/** Lo que puede hacer quien está usando la app (023). */
+export type PermisosMesa = { cobrar: boolean; anular: boolean };
 
 /**
  * Junta las líneas iguales para leerlas: al juntar dos mesas quedaban
@@ -38,7 +45,8 @@ export type AccionesMesa = {
 function agrupar(items: CuentaAbierta['items']): CuentaAbierta['items'] {
   const m = new Map<string, CuentaAbierta['items'][number]>();
   for (const i of items) {
-    const k = `${i.nombre_producto}|${i.precio_unitario}`;
+    // La nota y si ya está en cocina separan renglones: cocina los ve distinto.
+    const k = `${i.nombre_producto}|${i.precio_unitario}|${i.nota ?? ''}|${i.marchado}`;
     const ya = m.get(k);
     m.set(k, ya ? { ...ya, cantidad: ya.cantidad + i.cantidad } : i);
   }
@@ -82,6 +90,7 @@ export function PanelMesa({
   ahora,
   ocupado,
   acciones,
+  permisos,
   onCerrar,
 }: {
   pieza: PiezaConReserva | null;
@@ -92,6 +101,7 @@ export function PanelMesa({
   /** Hay una acción en curso: se deshabilitan los botones. */
   ocupado: boolean;
   acciones: AccionesMesa;
+  permisos: PermisosMesa;
   onCerrar: () => void;
 }) {
   const [reservando, setReservando] = useState(false);
@@ -99,6 +109,12 @@ export function PanelMesa({
   const abierto = Boolean(pieza);
   const reserva: Reserva | null = pieza?.reserva ?? null;
   const unidades = cuenta?.items.reduce((a, i) => a + i.cantidad, 0) ?? 0;
+  const pendientes = cuenta?.items.filter((i) => !i.marchado).reduce((a, i) => a + i.cantidad, 0) ?? 0;
+
+  function cobrar() {
+    if (pendientes > 0 && !confirm(`Hay ${pendientes} sin marchar a cocina. ¿Cobrar de todos modos?`)) return;
+    acciones.cobrar();
+  }
 
   return (
     <Dialog
@@ -155,12 +171,31 @@ export function PanelMesa({
                   )}
                 </div>
 
+                {/* Lo que falta mandar a cocina */}
+                {pendientes > 0 && (
+                  <div className="flex items-center gap-3 rounded-2xl bg-[var(--utilidad)]/15 px-3 py-2.5">
+                    <ChefHat className="h-4 w-4 shrink-0" />
+                    <p className="flex-1 text-sm font-medium">
+                      {pendientes} sin marchar a cocina
+                    </p>
+                    <Button size="sm" className="rounded-xl" disabled={ocupado} onClick={acciones.marchar}>
+                      Marchar
+                    </Button>
+                  </div>
+                )}
+
                 {/* Comanda */}
                 <ul className="max-h-[38vh] space-y-1.5 overflow-y-auto rounded-2xl bg-secondary/60 p-3 text-sm">
                   {agrupar(cuenta.items).map((i, idx) => (
                     <li key={idx} className="flex items-baseline justify-between gap-3">
                       <span className="min-w-0">
                         <span className="font-semibold tabular-nums">{i.cantidad}×</span> {i.nombre_producto}
+                        {!i.marchado && (
+                          <span className="ml-1.5 rounded bg-[var(--utilidad)]/25 px-1 text-[10px] font-medium">
+                            sin marchar
+                          </span>
+                        )}
+                        {i.nota && <span className="block pl-5 text-xs text-[var(--utilidad)]">→ {i.nota}</span>}
                       </span>
                       <span className="shrink-0 tabular-nums text-muted-foreground">
                         {formatCOP(i.cantidad * i.precio_unitario)}
@@ -179,9 +214,19 @@ export function PanelMesa({
                   <Button variant="outline" className="h-12 rounded-2xl gap-2" disabled={ocupado} onClick={acciones.agregar}>
                     <Plus className="h-4 w-4" /> Agregar
                   </Button>
-                  <Button className="h-12 rounded-2xl gap-2" disabled={ocupado} onClick={acciones.cobrar}>
-                    <Wallet className="h-4 w-4" /> Cobrar
-                  </Button>
+                  {permisos.cobrar ? (
+                    <Button className="h-12 rounded-2xl gap-2" disabled={ocupado} onClick={cobrar}>
+                      <Wallet className="h-4 w-4" /> Cobrar
+                    </Button>
+                  ) : (
+                    <Button
+                      className="h-12 rounded-2xl gap-2"
+                      disabled={ocupado || Boolean(cuenta.pedidaEn)}
+                      onClick={() => acciones.pedirCuenta(true)}
+                    >
+                      <Receipt className="h-4 w-4" /> {cuenta.pedidaEn ? 'Cuenta pedida' : 'Pidieron la cuenta'}
+                    </Button>
+                  )}
                 </div>
 
                 {/* Lo demás, más chico */}
@@ -196,9 +241,14 @@ export function PanelMesa({
                   <Chico disabled={ocupado} onClick={acciones.juntar}>
                     <Combine className="h-3.5 w-3.5" /> Juntar
                   </Chico>
-                  <Chico disabled={ocupado} onClick={acciones.anular} peligro>
-                    <Trash2 className="h-3.5 w-3.5" /> Anular
+                  <Chico disabled={ocupado} onClick={acciones.imprimirCuenta}>
+                    <Printer className="h-3.5 w-3.5" /> Imprimir cuenta
                   </Chico>
+                  {permisos.anular && (
+                    <Chico disabled={ocupado} onClick={acciones.anular} peligro>
+                      <Trash2 className="h-3.5 w-3.5" /> Anular
+                    </Chico>
+                  )}
                 </div>
               </div>
             ) : (

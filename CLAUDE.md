@@ -35,6 +35,9 @@ src/app/
   onboarding/              — crea empresa tras primer login
   dashboard/               — requiere auth + empresa; layout con Sidebar/BottomNav
     pos/                   — POS, registra ventas (selector de combos por producto)
+    mesas/                 — plano del salón, cuentas abiertas, para llevar y domicilios
+    cocina/                — comandas del turno + marcar el equipo que las imprime
+    equipo/                — meseros y cajeros (solo dueño)
     inventario/            — CRUD productos (+ opciones/combos por producto)
     egresos/               — CRUD gastos (+ /nuevo, /[id])
     ingresos/              — historial de ventas
@@ -106,7 +109,7 @@ export async function miAccion(prev: State, formData: FormData): Promise<State> 
 
 Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `ventas`, `venta_items`, `egresos`, `movimientos_inventario`. También `clientes`, `insumos` + `producto_receta` + `movimientos_insumos` (recetas), `pagos` + `wompi_eventos` (Wompi), `egresos_pendientes_whatsapp` (bot), `admin_log` (auditoría del super admin). El `empresa_id` es la clave de aislamiento en todas las tablas. Ver `supabase/schema.sql` y `supabase/migrations/` para el schema completo.
 
-Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos), `006_insumos` (ingredientes + recetas), …, `012_producto_insumo_link`, `013_pago_tarjeta`, `014_mesas_cuentas_abiertas`, `015_empresa_categoria`, `016_modo_practica`, `017_carta_publica`, `018_rls_solo_lectura` + `019_rls_por_tabla` (seguridad; **verificadas en producción el 2026-11-13**), `020_revoke_ajustar_stock` (cinturón extra: quita EXECUTE de `ajustar_stock_*` a anon/authenticated), `021_salon_mesas` (plano del salón; ver *Plano del salón*), `022_realtime_publicacion` (habilita Realtime de ventas y egresos; ver *Realtime*). El código degrada si falta una (reintenta sin la columna nueva o devuelve un mensaje que nombra la migración), así que se puede desplegar antes de correrlas.
+Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos), `006_insumos` (ingredientes + recetas), …, `012_producto_insumo_link`, `013_pago_tarjeta`, `014_mesas_cuentas_abiertas`, `015_empresa_categoria`, `016_modo_practica`, `017_carta_publica`, `018_rls_solo_lectura` + `019_rls_por_tabla` (seguridad; **verificadas en producción el 2026-11-13**), `020_revoke_ajustar_stock` (cinturón extra: quita EXECUTE de `ajustar_stock_*` a anon/authenticated), `021_salon_mesas` (plano del salón; ver *Plano del salón*), `022_realtime_publicacion` (habilita Realtime de ventas y egresos; ver *Realtime*), `023_comandas_domicilios_equipo` (cocina, domicilios, roles; ver *Cocina…* y *Equipo y roles*). El código degrada si falta una (reintenta sin la columna nueva o devuelve un mensaje que nombra la migración), así que se puede desplegar antes de correrlas.
 
 **Cómo se detecta "falta la columna" (CRÍTICO — se rompió una vez):** hay que preguntar por **dos** códigos, con `faltaColumna()` de `lib/supabase/errores.ts`. PostgREST responde distinto según la operación: un **SELECT** devuelve `42703` (el error crudo de Postgres), pero un **INSERT/UPDATE** devuelve `PGRST204`, porque valida el cuerpo contra su propio caché de schema antes de mandárselo a Postgres. Mirar solo `42703` dejó el registro de negocios nuevos **totalmente roto** mientras faltaba la migración 016: el reintento nunca corría y el dueño veía "No pudimos crear tu negocio" para siempre. Además, el reintento debe soltar **solo la columna que falta** (`nombreColumnaFaltante()`), no todas las opcionales: al soltarlas en bloque, un restaurante nuevo se creaba sin su `categoria` y perdía el menú de Mesas.
 
@@ -157,6 +160,24 @@ Una venta puede quedar en `estado = 'abierta'` con `ventas.mesa` (etiqueta libre
 - Del plano al POS: `prepararMesa` (mesa libre) o `cargarCuenta({ mesaId, huella, cobrar })`; con `mesaId` el carrito guarda directo sin preguntar y vuelve a Mesas; `cobrar: true` abre el cobro al llegar.
 - `juntarCuentas` reclama la cuenta origen (→ cancelada) antes de mover sus líneas por id, y la borra al final; si la destino se cobró en el medio, devuelve exactamente esas líneas.
 - Realtime de `salon_piezas` va en un **canal aparte** en `RealtimeRefresher`: si la tabla no existe, Realtime rechaza el canal entero y no puede tumbar el de ventas.
+
+### Cocina, para llevar y domicilios (migración `023`)
+
+**Marchar.** `venta_items.marchado_en` dice qué ya está en cocina y `venta_items.nota` lleva "sin cebolla". `guardarLineas` (en `lib/mesas/actions.ts`) **conserva lo marchado al reescribir la cuenta**: de cada plato (clave producto + nombre + nota) hasta la cantidad que ya estaba en cocina queda marchada con su hora y el resto "sin marchar", así que una línea puede quedar en dos filas. Si bajan la cantidad de algo marchado, devuelve `anulados` y sale una comanda **ANULADO**; `anularCuenta` hace lo mismo con todo lo marchado. `marcharPendientes` (`lib/comandas/crear.ts`) toma las filas con `UPDATE … WHERE marchado_en IS NULL` para que dos equipos que marchan a la vez no dupliquen la comanda; si la comanda no se crea, devuelve las filas a "sin marchar".
+
+**Comandas** (`comandas`, numeradas por negocio con índice único y reintento en 23505). Se imprimen en el **navegador** (`lib/comandas/ticket.ts`, iframe + `print()`, ticket 80 mm): sirve cualquier impresora instalada en el computador, sin drivers ni programas. El equipo marcado como impresora (localStorage, interruptor en `/dashboard/cocina`) corre `ImpresoraComandas` (en el layout): escucha INSERT de `comandas` por Realtime y **toma** cada una en el servidor (`tomarParaImprimir`, `impresa_en IS NULL`) antes de imprimir, así nunca sale dos veces. Al prender o volver el internet imprime lo pendiente de la última media hora. Para imprimir sin diálogo: Chrome con `--kiosk-printing`.
+
+**Para llevar** se cobra de una: `registrarVenta({ comanda: { titulo } })` crea la comanda después de la venta (si la comanda falla, la venta igual quedó). **Domicilio** es una cuenta abierta con `tipo_pedido='domicilio'`, `domicilio` (JSONB validado con zod: nombre, celular, dirección, canal, pago) y `entrega_estado` cocina → camino; se cobra al entregar como cualquier cuenta. El carrito los distingue con `pedido` (`prepararPedido`).
+
+### Equipo y roles (migración `023`)
+
+`usuarios.rol` = `dueno` | `caja` | `mesero` (default `dueno`: el que registró el negocio). **Toda la tabla de permisos está en `lib/auth/roles.ts`** (`puede`, `rutaPermitida`); no repetir reglas en otro lado.
+
+- **Rutas:** el proxy lee el rol de `user.app_metadata.rol` (lo escribe SOLO el servidor al crear la persona con la service role), así que no consulta la base en cada clic.
+- **Datos:** cada Server Action empieza con `exigir(permiso)` / `negado(permiso)` (`lib/auth/actor.ts`), que lee el rol **de la base** (no del token) y niega si `activo=false`. Las 42 acciones existentes y las API de reportes, IA y Wompi ya lo tienen; **una acción nueva debe llevarlo**.
+- El mesero cobra solo si `empresas.mesero_cobra` (interruptor en Equipo).
+- **Cuentas del equipo:** `crearPersona` crea un usuario de Auth con correo interno `usuario@equipo.mostrador.app` (ya confirmado). En el login, lo escrito sin `@` se completa con ese dominio. Desactivar = `activo=false` + ban en Auth.
+- Pendiente conocido: la RLS de lectura sigue siendo "todo lo de mi empresa", así que un mesero con la llave del navegador podría LEER ventas y costos (no escribir). Si importa, separar las políticas SELECT por rol.
 
 ### Pago con tarjeta y recargo (migración `013`)
 

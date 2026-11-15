@@ -1,5 +1,6 @@
 import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
+import { normalizarRol, type Rol } from './roles';
 
 export type SesionUsuario = {
   userId: string;
@@ -13,6 +14,12 @@ export type SesionUsuario = {
   modoPractica: boolean;
   /** Ya vio los globos de la pantalla de vender. */
   guiaPosVista: boolean;
+  /** Dueño, caja o mesero (023). Sin la migración, todos son dueño. */
+  rol: Rol;
+  /** El dueño desactivó a esta persona del equipo. */
+  activo: boolean;
+  /** Los meseros pueden cobrar (lo decide el dueño). */
+  meseroCobra: boolean;
 };
 
 /**
@@ -35,6 +42,7 @@ export const getSesion = cache(async (): Promise<SesionUsuario | null> => {
   // también los datos de la 015, o el menú del celular dejaría de saber qué
   // vende el negocio.
   const CAMPOS = [
+    'empresa_id, nombre, rol, activo, empresas (nombre, categoria, modo_practica, guia_pos_vista, mesero_cobra)',
     'empresa_id, nombre, empresas (nombre, categoria, modo_practica, guia_pos_vista)',
     'empresa_id, nombre, empresas (nombre, categoria)',
     'empresa_id, nombre, empresas (nombre)',
@@ -57,6 +65,7 @@ export const getSesion = cache(async (): Promise<SesionUsuario | null> => {
     categoria?: string | null;
     modo_practica?: boolean;
     guia_pos_vista?: boolean;
+    mesero_cobra?: boolean;
   } | null;
 
   return {
@@ -68,6 +77,9 @@ export const getSesion = cache(async (): Promise<SesionUsuario | null> => {
     empresaCategoria: emp?.categoria ?? null,
     modoPractica: emp?.modo_practica === true,
     guiaPosVista: emp?.guia_pos_vista === true,
+    rol: normalizarRol(data?.rol),
+    activo: data?.activo !== false,
+    meseroCobra: emp?.mesero_cobra === true,
   };
 });
 

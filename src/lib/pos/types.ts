@@ -14,10 +14,14 @@ export type CartItem = {
   cantidad: number;
   stock_disponible: number;
   categoria_color?: string | null;
+  /** "Sin cebolla"… (023). Dos notas distintas = dos líneas. */
+  nota?: string | null;
+  /** Cuántas de esta línea ya están en cocina (solo para mostrarlo). */
+  enCocina?: number;
 };
 
 export type MetodoPago = 'efectivo' | 'breb' | 'transferencia' | 'mixto' | 'tarjeta';
 
 export type VentaResult =
-  | { ok: true; ventaId: string; numero: number; total: number }
+  | { ok: true; ventaId: string; numero: number; total: number; comanda?: number | null }
   | { ok: false; error: string };

@@ -2,10 +2,11 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { faltaColumna } from '@/lib/supabase/errores';
+import { faltaColumna, nombreColumnaFaltante } from '@/lib/supabase/errores';
 import { getPlanInfo } from '@/lib/plan/queries';
+import { exigir } from '@/lib/auth/actor';
+import type { Permiso } from '@/lib/auth/roles';
 import {
   costosDeReceta,
   descontarIngredientesPorVenta,
@@ -13,10 +14,20 @@ import {
   descontarStockProductosPorVenta,
 } from '@/lib/insumos/consumo';
 import { normalizarVariantes } from '@/lib/inventario/queries';
+import { crearComanda, marcharPendientes, type ItemComanda } from '@/lib/comandas/crear';
 import { CUENTA_CAMBIO, huellaCuenta, type LineaHuella } from './huella';
 
 export type CuentaResult =
-  | { ok: true; ventaId: string; numero: number; total: number }
+  | {
+      ok: true;
+      ventaId: string;
+      numero: number;
+      total: number;
+      /** Número de la comanda que salió a cocina, si se marchó algo. */
+      comanda?: number | null;
+      /** Se guardó, pero algo de cocina no salió (para avisar sin perder la cuenta). */
+      aviso?: string;
+    }
   | { ok: false; error: string };
 
 const itemSchema = z.object({
@@ -25,7 +36,22 @@ const itemSchema = z.object({
   nombre: z.string().min(1),
   variante: z.string().max(80).nullable().optional(),
   insumo_extra_id: z.uuid().nullable().optional(),
+  /** "Sin cebolla", "término medio"… sale en la comanda. */
+  nota: z.string().trim().max(140).nullable().optional(),
 });
+
+const domicilioSchema = z.object({
+  nombre: z.string().trim().min(1, { error: '¿A nombre de quién va el domicilio?' }).max(60),
+  telefono: z
+    .string()
+    .transform((t) => t.replace(/[^\d+]/g, ''))
+    .pipe(z.string().regex(/^\+?\d{7,15}$/, { error: 'Revisa el celular del domicilio' })),
+  direccion: z.string().trim().min(4, { error: 'Falta la dirección del domicilio' }).max(160),
+  canal: z.enum(['llamada', 'whatsapp']),
+  pago: z.enum(['efectivo', 'tarjeta', 'breb', 'transferencia']),
+  nota: z.string().trim().max(200).optional().nullable(),
+});
+export type DatosDomicilio = z.infer<typeof domicilioSchema>;
 
 const cuentaSchema = z.object({
   /** Si viene, se actualiza esa cuenta; si no, se abre una nueva. */
@@ -38,33 +64,34 @@ const cuentaSchema = z.object({
   items: z.array(itemSchema).min(1, { error: 'Agrega al menos un producto' }),
   cliente_id: z.uuid().optional().nullable(),
   notas: z.string().max(500).optional(),
+  /** Además de guardar, mandar a cocina lo que falta (botón "Marchar"). */
+  marchar: z.boolean().optional(),
+  tipo_pedido: z.enum(['mesa', 'llevar', 'domicilio']).optional().nullable(),
+  domicilio: domicilioSchema.optional().nullable(),
 });
 
-type Contexto = { empresaId: string; admin: ReturnType<typeof createAdminClient> };
+type Contexto = {
+  empresaId: string;
+  admin: ReturnType<typeof createAdminClient>;
+  /** Quién lo hizo: sale en la comanda ("Carlos"). */
+  nombre: string;
+};
 
-async function contexto(): Promise<Contexto | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data: usuario } = await supabase
-    .from('usuarios')
-    .select('empresa_id')
-    .eq('id', user.id)
-    .maybeSingle();
-  if (!usuario?.empresa_id) return null;
-  return { empresaId: usuario.empresa_id, admin: createAdminClient() };
+/** Sesión + permiso del rol (023), leído de la base. */
+async function contexto(permiso: Permiso): Promise<{ ok: true; ctx: Contexto } | { ok: false; error: string }> {
+  const q = await exigir(permiso);
+  if (!q.ok) return q;
+  return {
+    ok: true,
+    ctx: { empresaId: q.actor.empresaId, admin: createAdminClient(), nombre: q.actor.nombre },
+  };
 }
 
 /**
  * Resuelve precios y costos SERVER-SIDE, igual que una venta normal: el
  * navegador nunca decide cuánto cuesta algo.
  */
-async function resolverLineas(
-  { empresaId, admin }: Contexto,
-  items: z.infer<typeof itemSchema>[],
-) {
+async function resolverLineas({ empresaId, admin }: Contexto, items: z.infer<typeof itemSchema>[]) {
   const ids = [...new Set(items.map((i) => i.producto_id))];
   const { data: prods } = await admin
     .from('productos')
@@ -88,44 +115,112 @@ async function resolverLineas(
         if (v) precioUnitario = v.precio;
       }
     }
-    return { ...i, precio_unitario: precioUnitario, precio_compra: precioCompra };
+    return { ...i, nota: i.nota || null, precio_unitario: precioUnitario, precio_compra: precioCompra };
   });
 }
+type Linea = Awaited<ReturnType<typeof resolverLineas>>[number];
+
+const claveLinea = (productoId: string | null, nombre: string, nota: string | null) =>
+  `${productoId ?? ''}\u0001${nombre}\u0001${nota ?? ''}`;
 
 /**
- * Reemplaza las líneas de una cuenta por las que llegan del carrito.
+ * Reemplaza las líneas de una cuenta por las que llegan del carrito,
+ * CONSERVANDO lo que ya está en cocina.
  *
- * Primero inserta las nuevas y DESPUÉS borra las viejas (por id). Antes era al
- * revés: si el insert fallaba (internet, una columna), la cuenta quedaba sin
- * ningún plato y la mesa se "perdía".
+ *  - Primero inserta las nuevas y DESPUÉS borra las viejas (por id): un insert
+ *    fallido ya no deja la mesa sin platos.
+ *  - Lo marchado no se pierde al reescribir: de cada plato, hasta la cantidad
+ *    que ya estaba en cocina queda marchada (con su hora) y el resto queda
+ *    "sin marchar". Por eso una línea puede quedar en DOS filas.
+ *  - Si bajaron la cantidad de algo que ya estaba en cocina, devuelve esos
+ *    `anulados` para avisarle a cocina.
+ *
+ * Sin la migración 023 (no hay `marchado_en`/`nota`), guarda como antes.
  */
 async function guardarLineas(
   { admin }: Contexto,
   ventaId: string,
-  lineas: Awaited<ReturnType<typeof resolverLineas>>,
-): Promise<string | null> {
-  const { data: viejas } = await admin.from('venta_items').select('id').eq('venta_id', ventaId);
+  lineas: Linea[],
+): Promise<{ error: string | null; anulados: ItemComanda[] }> {
+  let conMarcha = true;
+  let res = await admin
+    .from('venta_items')
+    .select('id, producto_id, nombre_producto, cantidad, nota, marchado_en')
+    .eq('venta_id', ventaId);
+  if (faltaColumna(res.error)) {
+    conMarcha = false;
+    res = (await admin.from('venta_items').select('id').eq('venta_id', ventaId)) as typeof res;
+  }
+  const viejas = (res.data ?? []) as Record<string, unknown>[];
+
+  // Lo que ya está en cocina, por plato.
+  const enCocina = new Map<string, { cantidad: number; en: string; nombre: string; nota: string | null }>();
+  if (conMarcha) {
+    for (const v of viejas) {
+      if (!v.marchado_en) continue;
+      const k = claveLinea(v.producto_id as string | null, v.nombre_producto as string, (v.nota as string | null) ?? null);
+      const ya = enCocina.get(k);
+      const en = v.marchado_en as string;
+      enCocina.set(k, {
+        cantidad: (ya?.cantidad ?? 0) + (Number(v.cantidad) || 0),
+        en: ya && ya.en < en ? ya.en : en,
+        nombre: v.nombre_producto as string,
+        nota: (v.nota as string | null) ?? null,
+      });
+    }
+  }
+
+  // Las nuevas, juntando las repetidas.
+  const nuevas = new Map<string, Linea>();
+  for (const l of lineas) {
+    const k = claveLinea(l.producto_id, l.nombre, conMarcha ? l.nota : null);
+    const ya = nuevas.get(k);
+    nuevas.set(k, ya ? { ...ya, cantidad: ya.cantidad + l.cantidad } : l);
+  }
 
   const usaBebidas = lineas.some((i) => i.insumo_extra_id);
-  const filas = lineas.map((i) => ({
-    venta_id: ventaId,
-    producto_id: i.producto_id,
-    nombre_producto: i.nombre,
-    cantidad: i.cantidad,
-    precio_unitario: i.precio_unitario,
-    precio_compra: i.precio_compra,
-    subtotal: i.cantidad * i.precio_unitario,
-    ...(usaBebidas ? { insumo_extra_id: i.insumo_extra_id ?? null } : {}),
-  }));
-  const { error } = await admin.from('venta_items').insert(filas);
-  if (error) return error.message;
+  const filas: Record<string, unknown>[] = [];
+  for (const [k, l] of nuevas) {
+    const base: Record<string, unknown> = {
+      venta_id: ventaId,
+      producto_id: l.producto_id,
+      nombre_producto: l.nombre,
+      precio_unitario: l.precio_unitario,
+      precio_compra: l.precio_compra,
+      ...(usaBebidas ? { insumo_extra_id: l.insumo_extra_id ?? null } : {}),
+      ...(conMarcha ? { nota: l.nota } : {}),
+    };
+    const cocina = enCocina.get(k);
+    const marchadas = Math.min(l.cantidad, cocina?.cantidad ?? 0);
+    if (marchadas > 0) {
+      filas.push({ ...base, cantidad: marchadas, subtotal: marchadas * l.precio_unitario, marchado_en: cocina!.en });
+    }
+    const resto = l.cantidad - marchadas;
+    if (resto > 0) {
+      filas.push({
+        ...base,
+        cantidad: resto,
+        subtotal: resto * l.precio_unitario,
+        ...(conMarcha ? { marchado_en: null } : {}),
+      });
+    }
+  }
 
-  const ids = (viejas ?? []).map((v) => v.id as string);
+  const anulados: ItemComanda[] = [];
+  for (const [k, c] of enCocina) {
+    const quedan = nuevas.get(k)?.cantidad ?? 0;
+    if (quedan < c.cantidad) anulados.push({ cantidad: c.cantidad - quedan, nombre: c.nombre, nota: c.nota });
+  }
+
+  const { error } = await admin.from('venta_items').insert(filas);
+  if (error) return { error: error.message, anulados: [] };
+
+  const ids = viejas.map((v) => v.id as string);
   if (ids.length > 0) {
     const { error: delErr } = await admin.from('venta_items').delete().in('id', ids);
-    if (delErr) return delErr.message;
+    if (delErr) return { error: delErr.message, anulados: [] };
   }
-  return null;
+  return { error: null, anulados };
 }
 
 /**
@@ -184,51 +279,119 @@ async function cumplirReserva({ empresaId, admin }: Contexto, mesaId: string) {
 function refrescar() {
   revalidatePath('/dashboard/mesas');
   revalidatePath('/dashboard/pos');
+  revalidatePath('/dashboard/cocina');
   revalidatePath('/dashboard');
 }
 
+/** Lo que va debajo del título en la comanda de un domicilio. */
+function detalleDomicilio(d: DatosDomicilio | null | undefined): string | null {
+  if (!d) return null;
+  const pago = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', breb: 'Bre-B', transferencia: 'Transferencia' }[d.pago];
+  return [d.direccion, d.telefono, `Paga: ${pago}`, d.nota].filter(Boolean).join(' · ');
+}
+
 /**
- * Abre una cuenta nueva o actualiza una existente. NO descuenta inventario ni
- * cuenta como ingreso: eso pasa solo al cobrarla.
+ * UPDATE/INSERT que suelta, de a una, las columnas que todavía no existen
+ * (migraciones sin correr), igual que el registro de negocios.
+ */
+async function conColumnasOpcionales<T>(
+  fila: Record<string, unknown>,
+  opcionales: string[],
+  hacer: (f: Record<string, unknown>) => PromiseLike<{ data: T; error: { code?: string; message?: string } | null }>,
+) {
+  let r = await hacer(fila);
+  for (let i = 0; r.error && faltaColumna(r.error) && i < opcionales.length; i++) {
+    const col = nombreColumnaFaltante(r.error);
+    if (!col || !(col in fila) || !opcionales.includes(col)) break;
+    delete fila[col];
+    r = await hacer(fila);
+  }
+  return r;
+}
+
+/** Después de guardar: avisar a cocina lo anulado y marchar lo nuevo. */
+async function cocina(
+  ctx: Contexto,
+  ventaId: string,
+  titulo: string,
+  detalle: string | null,
+  anulados: ItemComanda[],
+  marchar: boolean,
+): Promise<{ comanda: number | null; aviso?: string }> {
+  if (anulados.length > 0) {
+    await crearComanda(ctx.admin, {
+      empresaId: ctx.empresaId,
+      ventaId,
+      tipo: 'anulado',
+      titulo,
+      detalle,
+      items: anulados,
+      creadoPor: ctx.nombre,
+    });
+  }
+  if (!marchar) return { comanda: null };
+  const m = await marcharPendientes(ctx.admin, {
+    empresaId: ctx.empresaId,
+    ventaId,
+    titulo,
+    detalle,
+    creadoPor: ctx.nombre,
+  });
+  return { comanda: m.numero, aviso: m.error };
+}
+
+/**
+ * Abre una cuenta nueva o actualiza una existente (mesa, para llevar sin
+ * pagar o domicilio). NO descuenta inventario ni cuenta como ingreso: eso
+ * pasa solo al cobrarla. Con `marchar`, además manda a cocina lo nuevo.
  */
 export async function guardarCuenta(input: unknown): Promise<CuentaResult> {
+  const q = await contexto('atender');
+  if (!q.ok) return q;
+  const ctx = q.ctx;
   const parsed = cuentaSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
   }
-  const ctx = await contexto();
-  if (!ctx) return { ok: false, error: 'No autenticado' };
+  const d = parsed.data;
 
   const plan = await getPlanInfo(ctx.empresaId);
   if (plan.bloqueado) {
     return { ok: false, error: 'Tu prueba gratis terminó. Mejora tu plan para seguir vendiendo.' };
   }
 
+  // Domicilio: sin dirección ni celular no sale.
+  if (d.tipo_pedido === 'domicilio' && !d.domicilio) {
+    return { ok: false, error: 'Faltan los datos del domicilio.' };
+  }
+
   // Mesa del plano: la etiqueta es SU nombre, no lo que mande el navegador.
-  const mesaId = parsed.data.mesa_id ?? null;
-  let etiqueta = parsed.data.mesa;
+  const mesaId = d.mesa_id ?? null;
+  let etiqueta = d.mesa;
   if (mesaId) {
     const m = await mesaDelPlano(ctx, mesaId);
     if (!m.ok) return { ok: false, error: m.error };
     etiqueta = m.nombre;
+  } else if (d.tipo_pedido === 'domicilio' && d.domicilio) {
+    etiqueta = `Domicilio · ${d.domicilio.nombre}`.slice(0, 60);
   }
 
-  const lineas = await resolverLineas(ctx, parsed.data.items);
+  const lineas = await resolverLineas(ctx, d.items);
   const total = lineas.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
 
-  // Actualizar una cuenta que ya estaba abierta
-  if (parsed.data.venta_id) {
+  // ── Actualizar una cuenta que ya estaba abierta ──
+  if (d.venta_id) {
     const { data: existente } = await ctx.admin
       .from('ventas')
-      .select('id, numero_venta, estado')
-      .eq('id', parsed.data.venta_id)
+      .select('*')
+      .eq('id', d.venta_id)
       .eq('empresa_id', ctx.empresaId)
       .maybeSingle();
     if (!existente) return { ok: false, error: 'Esa cuenta ya no existe' };
     if (existente.estado !== 'abierta') {
       return { ok: false, error: 'Esa cuenta ya fue cobrada o anulada' };
     }
-    if (!(await cuentaSinCambios(ctx, existente.id, parsed.data.huella))) {
+    if (!(await cuentaSinCambios(ctx, existente.id, d.huella))) {
       return { ok: false, error: CUENTA_CAMBIO };
     }
 
@@ -238,57 +401,61 @@ export async function guardarCuenta(input: unknown): Promise<CuentaResult> {
       mesa: etiqueta,
       subtotal: total,
       total,
-      cliente_id: parsed.data.cliente_id ?? null,
-      notas: parsed.data.notas ?? null,
+      cliente_id: d.cliente_id ?? null,
+      notas: d.notas ?? null,
     };
     if (mesaId) cambios.mesa_id = mesaId;
-    const actualizar = () =>
+    if (d.domicilio) cambios.domicilio = d.domicilio;
+    const { data: siguen, error: updErr } = await conColumnasOpcionales(cambios, ['mesa_id', 'domicilio'], (f) =>
       ctx.admin
         .from('ventas')
-        .update(cambios)
+        .update(f)
         .eq('id', existente.id)
         .eq('empresa_id', ctx.empresaId)
         .eq('estado', 'abierta')
-        .select('id');
-    let { data: siguen, error: updErr } = await actualizar();
-    if (faltaColumna(updErr) && mesaId) {
-      delete cambios.mesa_id;
-      ({ data: siguen, error: updErr } = await actualizar());
-    }
+        .select('id'),
+    );
     if (updErr?.code === '23505') return { ok: false, error: mesaOcupada(etiqueta) };
     if (updErr) return { ok: false, error: 'No pudimos guardar la cuenta. Intenta de nuevo.' };
     if (!siguen || siguen.length === 0) {
       return { ok: false, error: 'Esa cuenta la acaban de cobrar o anular desde otro lado.' };
     }
 
-    const err = await guardarLineas(ctx, existente.id, lineas);
-    if (err) return { ok: false, error: `No se pudieron guardar los productos: ${err}` };
+    const g = await guardarLineas(ctx, existente.id, lineas);
+    if (g.error) return { ok: false, error: `No se pudieron guardar los productos: ${g.error}` };
+
+    const dom = (d.domicilio ?? (existente as Record<string, unknown>).domicilio) as DatosDomicilio | null;
+    const k = await cocina(ctx, existente.id, etiqueta, detalleDomicilio(dom), g.anulados, d.marchar === true);
 
     refrescar();
-    return { ok: true, ventaId: existente.id, numero: existente.numero_venta, total };
+    return { ok: true, ventaId: existente.id, numero: existente.numero_venta, total, comanda: k.comanda, aviso: k.aviso };
   }
 
-  // Abrir una cuenta nueva
+  // ── Abrir una cuenta nueva ──
   const insert: Record<string, unknown> = {
     empresa_id: ctx.empresaId,
     subtotal: total,
     iva: 0,
     total,
-    metodo_pago: 'efectivo', // se decide al cobrar; la columna no admite null
+    metodo_pago: d.domicilio?.pago === 'tarjeta' ? 'tarjeta' : 'efectivo', // se decide al cobrar
     estado: 'abierta',
     mesa: etiqueta,
-    notas: parsed.data.notas ?? null,
+    notas: d.notas ?? null,
   };
-  if (parsed.data.cliente_id) insert.cliente_id = parsed.data.cliente_id;
+  if (d.cliente_id) insert.cliente_id = d.cliente_id;
   if (mesaId) insert.mesa_id = mesaId;
-
-  const abrir = () =>
-    ctx.admin.from('ventas').insert(insert).select('id, numero_venta').single();
-  let { data: venta, error } = await abrir();
-  if (faltaColumna(error) && mesaId) {
-    delete insert.mesa_id;
-    ({ data: venta, error } = await abrir());
+  const tipo = d.tipo_pedido ?? (mesaId ? 'mesa' : null);
+  if (tipo) insert.tipo_pedido = tipo;
+  if (d.domicilio) {
+    insert.domicilio = d.domicilio;
+    insert.entrega_estado = 'cocina';
   }
+
+  const { data: venta, error } = await conColumnasOpcionales<{ id: string; numero_venta: number } | null>(
+    insert,
+    ['mesa_id', 'tipo_pedido', 'domicilio', 'entrega_estado'],
+    (f) => ctx.admin.from('ventas').insert(f).select('id, numero_venta').single(),
+  );
 
   // El índice único de la 021: esa mesa ya tiene cuenta abierta.
   if (error?.code === '23505') return { ok: false, error: mesaOcupada(etiqueta) };
@@ -296,23 +463,72 @@ export async function guardarCuenta(input: unknown): Promise<CuentaResult> {
   if (error || !venta) {
     // Sin la migración 014 la BD rechaza el estado 'abierta' o la columna mesa.
     if (error?.code === '23514' || faltaColumna(error)) {
-      return {
-        ok: false,
-        error: 'Para usar mesas falta correr la migración 014 en Supabase.',
-      };
+      return { ok: false, error: 'Para usar mesas falta correr la migración 014 en Supabase.' };
     }
     return { ok: false, error: 'No pudimos abrir la cuenta. Intenta de nuevo.' };
   }
 
-  const err = await guardarLineas(ctx, venta.id, lineas);
-  if (err) {
+  const g = await guardarLineas(ctx, venta.id, lineas);
+  if (g.error) {
     await ctx.admin.from('ventas').delete().eq('id', venta.id);
-    return { ok: false, error: `No se pudieron guardar los productos: ${err}` };
+    return { ok: false, error: `No se pudieron guardar los productos: ${g.error}` };
   }
   if (mesaId) await cumplirReserva(ctx, mesaId);
 
+  const k = await cocina(ctx, venta.id, etiqueta, detalleDomicilio(d.domicilio), [], d.marchar === true);
+
   refrescar();
-  return { ok: true, ventaId: venta.id, numero: venta.numero_venta, total };
+  return { ok: true, ventaId: venta.id, numero: venta.numero_venta, total, comanda: k.comanda, aviso: k.aviso };
+}
+
+/**
+ * Marchar lo que falte de una cuenta ya guardada (botón "Marchar" del panel
+ * de la mesa). Si no hay nada pendiente, no crea comanda.
+ */
+export async function marcharCuenta(
+  ventaId: string,
+): Promise<{ ok: true; comanda: number | null } | { ok: false; error: string }> {
+  const q = await contexto('atender');
+  if (!q.ok) return q;
+  const ctx = q.ctx;
+  if (!z.uuid().safeParse(ventaId).success) return { ok: false, error: 'Cuenta inválida' };
+
+  const { data: venta } = await ctx.admin
+    .from('ventas')
+    .select('*')
+    .eq('id', ventaId)
+    .eq('empresa_id', ctx.empresaId)
+    .maybeSingle();
+  if (!venta || venta.estado !== 'abierta') return { ok: false, error: 'Esa cuenta ya no está abierta.' };
+
+  const m = await marcharPendientes(ctx.admin, {
+    empresaId: ctx.empresaId,
+    ventaId,
+    titulo: (venta.mesa as string) || `Cuenta #${venta.numero_venta}`,
+    detalle: detalleDomicilio((venta as Record<string, unknown>).domicilio as DatosDomicilio | null),
+    creadoPor: ctx.nombre,
+  });
+  if (m.error) return { ok: false, error: m.error };
+  refrescar();
+  return { ok: true, comanda: m.numero };
+}
+
+/** El domicilio salió del local (va en camino). */
+export async function domicilioSalio(ventaId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const q = await contexto('atender');
+  if (!q.ok) return q;
+  if (!z.uuid().safeParse(ventaId).success) return { ok: false, error: 'Cuenta inválida' };
+  const { data, error } = await q.ctx.admin
+    .from('ventas')
+    .update({ entrega_estado: 'camino' })
+    .eq('id', ventaId)
+    .eq('empresa_id', q.ctx.empresaId)
+    .eq('estado', 'abierta')
+    .select('id');
+  if (error) return { ok: false, error: 'No pudimos marcarlo.' };
+  if (!data || data.length === 0) return { ok: false, error: 'Ese domicilio ya no está abierto.' };
+  refrescar();
+  return { ok: true };
 }
 
 const cobroSchema = z.object({
@@ -330,12 +546,13 @@ const cobroSchema = z.object({
  * una venta normal. Reusa la misma fila de `ventas`, así que no se duplica.
  */
 export async function cobrarCuenta(input: unknown): Promise<CuentaResult> {
+  const q = await contexto('cobrar');
+  if (!q.ok) return q;
+  const ctx = q.ctx;
   const parsed = cobroSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
   }
-  const ctx = await contexto();
-  if (!ctx) return { ok: false, error: 'No autenticado' };
 
   const { data: venta } = await ctx.admin
     .from('ventas')
@@ -380,24 +597,15 @@ export async function cobrarCuenta(input: unknown): Promise<CuentaResult> {
   // el mesero cobran a la vez, uno gana y el otro recibe "ya la cobraron" sin
   // haber tocado nada. (Antes los platos se reescribían ANTES de este filtro,
   // y el que perdía dejaba sus platos en la venta que había cobrado el otro.)
-  let { data: cerradas, error: updErr } = await ctx.admin
-    .from('ventas')
-    .update(cambios)
-    .eq('id', venta.id)
-    .eq('empresa_id', ctx.empresaId)
-    .eq('estado', 'abierta')
-    .select('id');
-
-  if (faltaColumna(updErr)) {
-    delete cambios.recargo;
-    ({ data: cerradas, error: updErr } = await ctx.admin
+  const { data: cerradas, error: updErr } = await conColumnasOpcionales(cambios, ['recargo'], (f) =>
+    ctx.admin
       .from('ventas')
-      .update(cambios)
+      .update(f)
       .eq('id', venta.id)
       .eq('empresa_id', ctx.empresaId)
       .eq('estado', 'abierta')
-      .select('id'));
-  }
+      .select('id'),
+  );
   if (updErr) return { ok: false, error: 'No pudimos cerrar la cuenta.' };
   if (!cerradas || cerradas.length === 0) {
     return { ok: false, error: 'Esa cuenta la acaban de cobrar desde otro lado.' };
@@ -405,14 +613,14 @@ export async function cobrarCuenta(input: unknown): Promise<CuentaResult> {
 
   // Ya es nuestra: ahora sí los platos finales. Si fallan, la cuenta vuelve a
   // abierta tal como estaba (todavía no se descontó nada del inventario).
-  const err = await guardarLineas(ctx, venta.id, lineas);
-  if (err) {
+  const g = await guardarLineas(ctx, venta.id, lineas);
+  if (g.error) {
     await ctx.admin
       .from('ventas')
       .update({ estado: 'abierta', subtotal: venta.subtotal, total: venta.total })
       .eq('id', venta.id)
       .eq('empresa_id', ctx.empresaId);
-    return { ok: false, error: `No se pudieron guardar los productos: ${err}` };
+    return { ok: false, error: `No se pudieron guardar los productos: ${g.error}` };
   }
 
   // Acumular la compra del cliente, igual que una venta normal. Si esto no
@@ -459,10 +667,14 @@ export async function cobrarCuenta(input: unknown): Promise<CuentaResult> {
   return { ok: true, ventaId: venta.id, numero: venta.numero_venta, total };
 }
 
-/** Anula una cuenta abierta. No toca inventario: nunca lo había descontado. */
+/**
+ * Anula una cuenta abierta. No toca inventario: nunca lo había descontado. Si
+ * algo ya estaba en cocina, sale una comanda ANULADO para que no lo preparen.
+ */
 export async function anularCuenta(ventaId: string): Promise<{ ok: boolean; error?: string }> {
-  const ctx = await contexto();
-  if (!ctx) return { ok: false, error: 'No autenticado' };
+  const q = await contexto('anular');
+  if (!q.ok) return q;
+  const ctx = q.ctx;
 
   const { data: cerradas, error } = await ctx.admin
     .from('ventas')
@@ -470,11 +682,31 @@ export async function anularCuenta(ventaId: string): Promise<{ ok: boolean; erro
     .eq('id', ventaId)
     .eq('empresa_id', ctx.empresaId)
     .eq('estado', 'abierta')
-    .select('id');
+    .select('id, mesa, numero_venta');
 
   if (error) return { ok: false, error: 'No pudimos anular la cuenta.' };
   if (!cerradas || cerradas.length === 0) {
     return { ok: false, error: 'Esa cuenta ya no estaba abierta.' };
+  }
+
+  const { data: enCocina } = await ctx.admin
+    .from('venta_items')
+    .select('cantidad, nombre_producto, nota, marchado_en')
+    .eq('venta_id', ventaId)
+    .not('marchado_en', 'is', null);
+  if (enCocina && enCocina.length > 0) {
+    await crearComanda(ctx.admin, {
+      empresaId: ctx.empresaId,
+      ventaId,
+      tipo: 'anulado',
+      titulo: (cerradas[0].mesa as string) || `Cuenta #${cerradas[0].numero_venta}`,
+      creadoPor: ctx.nombre,
+      items: enCocina.map((i) => ({
+        cantidad: Number(i.cantidad) || 0,
+        nombre: i.nombre_producto as string,
+        nota: (i.nota as string | null) ?? null,
+      })),
+    });
   }
 
   refrescar();

@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { loginSchema, registerSchema } from './schemas';
+import { DOMINIO_EQUIPO, inicioDe, normalizarRol } from './roles';
 
 export type AuthState = {
   error?: string;
@@ -12,8 +13,11 @@ export type AuthState = {
 };
 
 export async function signIn(_prev: AuthState, formData: FormData): Promise<AuthState> {
+  // Equipo (023): el mesero entra con su usuario ("carlos.sabore"), sin correo.
+  // Por dentro su cuenta es usuario@equipo.mostrador.app.
+  const escrito = String(formData.get('email') ?? '').trim().toLowerCase();
   const parsed = loginSchema.safeParse({
-    email: formData.get('email'),
+    email: escrito && !escrito.includes('@') ? `${escrito}@${DOMINIO_EQUIPO}` : escrito,
     password: formData.get('password'),
   });
 
@@ -22,14 +26,17 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
+  const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
 
   if (error) {
-    return { error: 'Email o contraseña incorrectos' };
+    return { error: 'Usuario, email o contraseña incorrectos' };
   }
 
   revalidatePath('/', 'layout');
-  redirect('/dashboard');
+  // Cada rol entra directo a su pantalla (el mesero a Mesas). Si fuera a
+  // /dashboard y el proxy lo redirigiera, la barra quedaba en /dashboard y el
+  // menú no marcaba dónde está.
+  redirect(inicioDe(normalizarRol(data.user?.app_metadata?.rol)));
 }
 
 export async function signUp(_prev: AuthState, formData: FormData): Promise<AuthState> {

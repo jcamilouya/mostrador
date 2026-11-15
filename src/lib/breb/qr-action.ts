@@ -1,5 +1,7 @@
 'use server';
 
+import { negado } from '@/lib/auth/actor';
+
 import { createClient } from '@/lib/supabase/server';
 import { getBrebConfig } from './queries';
 import { construirPayloadBreb } from './emv';
@@ -23,6 +25,7 @@ export async function generarQRPago(
   monto: number,
   referencia?: string,
 ): Promise<QRPagoResult | null> {
+  if (await negado('cobrar')) return null; // permiso por rol (023)
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;

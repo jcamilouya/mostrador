@@ -48,6 +48,8 @@ export function PaymentModal({
   const cuentaId = useCart((s) => s.cuentaId);
   const mesa = useCart((s) => s.mesa);
   const huella = useCart((s) => s.huella);
+  // Para llevar (023): la comanda sale a cocina en el mismo cobro.
+  const pedido = useCart((s) => s.pedido);
 
   const [step, setStep] = useState<Step>('metodo');
   const [recibido, setRecibido] = useState<number>(0);
@@ -168,6 +170,7 @@ export function PaymentModal({
                 nombre: i.nombre,
                 variante: i.variante ?? null,
                 insumo_extra_id: i.insumo_extra_id ?? null,
+                nota: i.nota ?? null,
               })),
             })
           : await registrarVenta({
@@ -175,6 +178,7 @@ export function PaymentModal({
               confirmado,
               cliente_id: cliente?.id ?? null,
               idempotency_key: idemKey,
+              comanda: pedido?.tipo === 'llevar' ? { titulo: mesa ?? 'Para llevar' } : null,
               items: items.map((i) => ({
                 producto_id: i.producto_id,
                 cantidad: i.cantidad,
@@ -183,6 +187,7 @@ export function PaymentModal({
                 nombre: i.nombre,
                 variante: i.variante ?? null,
                 insumo_extra_id: i.insumo_extra_id ?? null,
+                nota: i.nota ?? null,
               })),
             });
       } catch {

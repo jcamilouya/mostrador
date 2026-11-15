@@ -1,5 +1,7 @@
 'use server';
 
+import { negado } from '@/lib/auth/actor';
+
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -86,6 +88,7 @@ export type AnularResult = { ok: true } | { ok: false; error: string };
  * que ya se había descontado. Sin esto el inventario quedaría mentiroso.
  */
 export async function anularVenta(ventaId: string): Promise<AnularResult> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await getEmpresaIdValidado();
   if (!empresaId) return { ok: false, error: 'No autenticado' };
 

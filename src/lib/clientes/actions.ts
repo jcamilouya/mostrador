@@ -1,5 +1,7 @@
 'use server';
 
+import { negado } from '@/lib/auth/actor';
+
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
@@ -60,6 +62,7 @@ export async function crearCliente(input: {
   telefono?: string;
   notas?: string;
 }): Promise<ClienteState> {
+  { const neg = await negado('clientes'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await getEmpresaIdValidado();
   if (!empresaId) return { error: 'No autenticado' };
 
@@ -90,6 +93,7 @@ export async function crearClienteForm(
   _prev: ClienteState,
   formData: FormData,
 ): Promise<ClienteState> {
+  { const neg = await negado('clientes'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   return crearCliente({
     nombre: String(formData.get('nombre') ?? ''),
     telefono: String(formData.get('telefono') ?? ''),
@@ -102,6 +106,7 @@ export async function actualizarCliente(
   _prev: ClienteState,
   formData: FormData,
 ): Promise<ClienteState> {
+  { const neg = await negado('clientes'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await getEmpresaIdValidado();
   if (!empresaId) return { error: 'No autenticado' };
 
@@ -145,6 +150,7 @@ export async function guardarClienteDesdeRecibo(input: {
   nombre?: string;
   telefono?: string;
 }): Promise<ClienteState> {
+  { const neg = await negado('cobrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await getEmpresaIdValidado();
   if (!empresaId) return { error: 'No autenticado' };
 
@@ -206,6 +212,7 @@ export async function guardarClienteDesdeRecibo(input: {
 }
 
 export async function eliminarCliente(id: string): Promise<void> {
+  if (await negado('administrar')) return; // permiso por rol (023)
   const empresaId = await getEmpresaIdValidado();
   if (!empresaId) return;
   const admin = createAdminClient();

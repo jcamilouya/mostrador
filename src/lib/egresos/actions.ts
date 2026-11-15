@@ -1,5 +1,7 @@
 'use server';
 
+import { negado } from '@/lib/auth/actor';
+
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
@@ -21,6 +23,7 @@ async function requireEmpresaId(): Promise<string | null> {
 }
 
 export async function crearEgreso(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) redirect('/login');
 
@@ -62,6 +65,7 @@ export async function actualizarEgreso(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) redirect('/login');
 
@@ -99,6 +103,7 @@ export async function actualizarEgreso(
 }
 
 export async function eliminarEgreso(id: string): Promise<void> {
+  if (await negado('administrar')) return; // permiso por rol (023)
   const empresaId = await requireEmpresaId();
   if (!empresaId) return;
   const admin = createAdminClient();

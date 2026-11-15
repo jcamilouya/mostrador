@@ -58,6 +58,8 @@ export function RealtimeRefresher({ empresaId }: { empresaId: string }) {
     const tablas = ['ventas', 'egresos'];
     // Plano del salón (021): reservas y cambios de mesas, solo en Mesas.
     if (pathname.startsWith('/dashboard/mesas')) tablas.push('salon_piezas');
+    // Comandas (023): la pantalla de cocina ve llegar cada pedido.
+    if (pathname.startsWith('/dashboard/cocina')) tablas.push('comandas');
 
     let cancelado = false;
     let canales: ReturnType<typeof supabase.channel>[] = [];

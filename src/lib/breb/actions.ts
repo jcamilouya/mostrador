@@ -1,5 +1,7 @@
 'use server';
 
+import { negado } from '@/lib/auth/actor';
+
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -29,6 +31,7 @@ export async function guardarConfiguracion(
   _prev: ConfigState,
   formData: FormData,
 ): Promise<ConfigState> {
+  { const neg = await negado('administrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await getEmpresaIdValidado();
   if (!empresaId) return { error: 'No autenticado' };
 
@@ -94,6 +97,7 @@ export type ConfirmarResult = { ok: true } | { ok: false; error: string };
  * descuenta el stock de sus productos (el descuento no se hizo al crearla).
  */
 export async function confirmarVentaBreb(ventaId: string): Promise<ConfirmarResult> {
+  { const neg = await negado('cobrar'); if (neg) return { ok: false, error: neg }; } // permiso por rol (023)
   const empresaId = await getEmpresaIdValidado();
   if (!empresaId) return { ok: false, error: 'No autenticado' };
 

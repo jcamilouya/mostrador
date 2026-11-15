@@ -19,6 +19,8 @@ export type InfoMesa = {
   estado: EstadoMesa;
   total?: number;
   minutos?: number;
+  /** Platos que nadie ha marchado a cocina (023): punto ámbar en la mesa. */
+  pendientes?: number;
 };
 
 /** "Mesa 4" → "4"; "Terraza 2" → "T2"; lo demás tal cual (se recorta con CSS). */
@@ -238,7 +240,9 @@ export function Plano({
 
           const etiqueta = editable
             ? `${p.nombre}, ${p.puestos ?? ''} puestos. Arrastra para mover`
-            : `${p.nombre}, ${ESTADOS[estado].nombre}${info?.total ? `, ${formatCOP(info.total)}` : ''}`;
+            : `${p.nombre}, ${ESTADOS[estado].nombre}${info?.total ? `, ${formatCOP(info.total)}` : ''}${
+                info?.pendientes ? `, ${info.pendientes} sin marchar` : ''
+              }`;
 
           return (
             <button
@@ -269,6 +273,13 @@ export function Plano({
                   }%, var(--card))`,
                 }}
               >
+                {!editable && (info?.pendientes ?? 0) > 0 && (
+                  <span
+                    className="absolute right-[12%] top-[12%] h-2.5 w-2.5 rounded-full bg-[var(--utilidad)] ring-2 ring-card"
+                    title={`${info?.pendientes} sin marchar`}
+                    aria-hidden
+                  />
+                )}
                 {/* Nombre: corto cuando la mesa es chica, completo cuando cabe */}
                 <span className="max-w-full truncate px-1 text-sm font-semibold leading-none @[5.5rem]:hidden">
                   {corto}

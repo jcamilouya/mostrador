@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { getEmpresaIdDelUsuario } from '@/lib/inventario/queries';
+import { getSesion } from '@/lib/auth/sesion';
+import { puede } from '@/lib/auth/roles';
 import { getCuentasAbiertas } from '@/lib/mesas/queries';
 import { getSalon } from '@/lib/salon/queries';
 import { MesasManager } from '@/components/mesas/MesasManager';
@@ -33,8 +34,9 @@ export const metadata: Metadata = {
 };
 
 export default async function MesasPage() {
-  const empresaId = await getEmpresaIdDelUsuario();
-  if (!empresaId) redirect('/onboarding');
+  const sesion = await getSesion();
+  const empresaId = sesion?.empresaId;
+  if (!sesion || !empresaId) redirect('/onboarding');
 
   const [cuentas, salon] = await Promise.all([getCuentasAbiertas(empresaId), getSalon(empresaId)]);
   const ayuda = salon.disponible ? AYUDA : AYUDA_SIN_PLANO;
@@ -60,6 +62,12 @@ export default async function MesasPage() {
           piezas={salon.piezas}
           cuentas={cuentas}
           generadoEn={Date.now()}
+          negocio={sesion.empresaNombre}
+          permisos={{
+            cobrar: puede(sesion.rol, 'cobrar', sesion.meseroCobra),
+            anular: puede(sesion.rol, 'anular'),
+            plano: puede(sesion.rol, 'administrar'),
+          }}
         />
       ) : (
         <MesasManager cuentas={cuentas} />

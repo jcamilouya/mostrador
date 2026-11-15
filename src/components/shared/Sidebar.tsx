@@ -3,16 +3,17 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Store, ShieldCheck } from 'lucide-react';
-import { NAV_ITEMS } from './NavItems';
+import { navDe } from './NavItems';
+import type { Rol } from '@/lib/auth/roles';
 import { SignOutButton } from './SignOutButton';
 import { ThemeToggle } from './ThemeToggle';
 
-export function Sidebar({ negocio, esAdmin }: { negocio: string; esAdmin?: boolean }) {
+export function Sidebar({ negocio, esAdmin, rol = 'dueno' }: { negocio: string; esAdmin?: boolean; rol?: Rol }) {
   const pathname = usePathname();
 
   return (
     <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r lg:bg-sidebar lg:px-4 lg:py-6">
-      <Link href="/dashboard" className="mb-8 inline-flex items-center gap-2 px-2">
+      <Link href={rol === 'dueno' ? '/dashboard' : '/dashboard/mesas'} className="mb-8 inline-flex items-center gap-2 px-2">
         <span className="rounded-xl bg-card p-2 shadow-sm">
           <Store className="h-5 w-5" />
         </span>
@@ -23,7 +24,7 @@ export function Sidebar({ negocio, esAdmin }: { negocio: string; esAdmin?: boole
       </Link>
 
       <nav className="flex flex-1 flex-col gap-1">
-        {NAV_ITEMS.map((item) => {
+        {navDe(rol).map((item) => {
           const Icon = item.icon;
           const active =
             item.href === '/dashboard'
