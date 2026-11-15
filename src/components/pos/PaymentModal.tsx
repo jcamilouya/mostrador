@@ -47,6 +47,7 @@ export function PaymentModal({
   // Si el carrito viene de una mesa, cobrar cierra ESA cuenta.
   const cuentaId = useCart((s) => s.cuentaId);
   const mesa = useCart((s) => s.mesa);
+  const huella = useCart((s) => s.huella);
 
   const [step, setStep] = useState<Step>('metodo');
   const [recibido, setRecibido] = useState<number>(0);
@@ -157,6 +158,7 @@ export function PaymentModal({
           ? // Cuenta de mesa: se cierra la venta que ya existe, no se crea otra.
             await cobrarCuenta({
               venta_id: cuentaId,
+              huella,
               metodo_pago: metodo,
               mesa: mesa ?? undefined,
               cliente_id: cliente?.id ?? null,

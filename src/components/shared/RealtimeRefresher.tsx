@@ -49,17 +49,44 @@ export function RealtimeRefresher({ empresaId }: { empresaId: string }) {
     };
     document.addEventListener('visibilitychange', alVolver);
 
+    // UN CANAL POR TABLA, a propósito. Si una tabla no está en la publicación
+    // de Realtime, Supabase rechaza el canal ENTERO ("Unable to subscribe…").
+    // Estuvieron juntas ventas + egresos, `egresos` no estaba publicada, y la
+    // actualización en vivo de ventas nunca funcionó en producción sin que
+    // nadie lo notara. Separadas, la que falte no tumba a las demás.
     const filtro = `empresa_id=eq.${empresaId}`;
-    const channel = supabase
-      .channel(`mostrador-${empresaId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas', filter: filtro }, refrescar)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'egresos', filter: filtro }, refrescar)
-      .subscribe();
+    const tablas = ['ventas', 'egresos'];
+    // Plano del salón (021): reservas y cambios de mesas, solo en Mesas.
+    if (pathname.startsWith('/dashboard/mesas')) tablas.push('salon_piezas');
+
+    let cancelado = false;
+    let canales: ReturnType<typeof supabase.channel>[] = [];
+
+    // PRIMERO la sesión, DESPUÉS los canales. El cliente del navegador lee la
+    // sesión de las cookies sin apuro, y si el canal se une antes, se une como
+    // ANÓNIMO: Realtime aplica RLS (solo `authenticated` puede leer) y no
+    // entrega NINGÚN cambio, sin dar error. Comprobado en el websocket: los
+    // joins salían sin access_token. Los refrescos del token después de esto
+    // los propaga supabase-js solo.
+    (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelado) return;
+      if (session?.access_token) supabase.realtime.setAuth(session.access_token);
+      canales = tablas.map((tabla) =>
+        supabase
+          .channel(`mostrador-${tabla}-${empresaId}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: tabla, filter: filtro }, refrescar)
+          .subscribe(),
+      );
+    })();
 
     return () => {
+      cancelado = true;
       if (timer.current) clearTimeout(timer.current);
       document.removeEventListener('visibilitychange', alVolver);
-      supabase.removeChannel(channel);
+      canales.forEach((c) => supabase.removeChannel(c));
     };
   }, [empresaId, router, pathname]);
 

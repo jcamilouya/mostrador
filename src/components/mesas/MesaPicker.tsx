@@ -22,18 +22,23 @@ const RAPIDOS = [
  * navegador: un recuadro gris que no se parece en nada a la app y que en el
  * celular obliga a escribir. Aquí se toca el número y listo.
  */
+export type MesaParaElegir = { id: string; nombre: string; zona: string; ocupada: boolean };
+
 export function MesaPicker({
   open,
   valorInicial,
   guardando,
+  mesas = [],
   onCancel,
   onConfirm,
 }: {
   open: boolean;
   valorInicial?: string | null;
   guardando?: boolean;
+  /** Mesas del plano. Si hay, se muestran ellas en vez de los números 1–12. */
+  mesas?: MesaParaElegir[];
   onCancel: () => void;
-  onConfirm: (mesa: string) => void;
+  onConfirm: (mesa: string, mesaId?: string | null) => void;
 }) {
   const [valor, setValor] = useState(valorInicial ?? '');
 
@@ -42,11 +47,17 @@ export function MesaPicker({
   }, [open, valorInicial]);
 
   const listo = valor.trim().length > 0;
+  // Si lo escrito/tocado es una mesa del plano, la cuenta se amarra a ella.
+  const delPlano = mesas.find(
+    (m) => m.nombre.trim().toLowerCase() === valor.trim().toLowerCase(),
+  );
+  const variasZonas = new Set(mesas.map((m) => m.zona)).size > 1;
 
   function confirmar(texto?: string) {
     const final = (texto ?? valor).trim();
     if (!final) return;
-    onConfirm(final);
+    const m = mesas.find((x) => x.nombre.trim().toLowerCase() === final.toLowerCase());
+    onConfirm(m ? m.nombre : final, m?.id ?? null);
   }
 
   return (
@@ -57,8 +68,38 @@ export function MesaPicker({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Números: lo que usa un mesero el 90% de las veces */}
-          <div className="grid grid-cols-4 gap-2">
+          {/* Las mesas del plano del restaurante */}
+          {mesas.length > 0 && (
+            <div className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
+              {mesas.map((m) => {
+                const activo = delPlano?.id === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    disabled={m.ocupada && !activo}
+                    onClick={() => setValor(m.nombre)}
+                    onDoubleClick={() => !m.ocupada && confirmar(m.nombre)}
+                    className={`flex min-h-14 flex-col items-center justify-center rounded-2xl px-2 py-1.5 text-sm font-semibold leading-tight transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 ${
+                      activo
+                        ? 'bg-foreground text-background'
+                        : 'bg-secondary text-foreground hover:bg-secondary/70'
+                    }`}
+                  >
+                    <span className="line-clamp-2 break-words text-center">{m.nombre}</span>
+                    {m.ocupada ? (
+                      <span className="text-[10px] font-normal">ocupada</span>
+                    ) : variasZonas ? (
+                      <span className="text-[10px] font-normal opacity-70">{m.zona}</span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Números: lo que usa un mesero el 90% de las veces (sin plano) */}
+          <div className={mesas.length > 0 ? 'hidden' : 'grid grid-cols-4 gap-2'}>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => {
               const etiqueta = `Mesa ${n}`;
               const activo = valor.trim().toLowerCase() === etiqueta.toLowerCase();

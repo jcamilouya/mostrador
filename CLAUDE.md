@@ -106,7 +106,7 @@ export async function miAccion(prev: State, formData: FormData): Promise<State> 
 
 Tablas principales: `empresas` → `usuarios`, `categorias`, `productos`, `ventas`, `venta_items`, `egresos`, `movimientos_inventario`. También `clientes`, `insumos` + `producto_receta` + `movimientos_insumos` (recetas), `pagos` + `wompi_eventos` (Wompi), `egresos_pendientes_whatsapp` (bot), `admin_log` (auditoría del super admin). El `empresa_id` es la clave de aislamiento en todas las tablas. Ver `supabase/schema.sql` y `supabase/migrations/` para el schema completo.
 
-Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos), `006_insumos` (ingredientes + recetas), …, `012_producto_insumo_link`, `013_pago_tarjeta`, `014_mesas_cuentas_abiertas`, `015_empresa_categoria`, `016_modo_practica`, `017_carta_publica`, **`018_rls_solo_lectura` + `019_rls_por_tabla` (seguridad, urgentes: correr las dos)**. El código degrada si falta una (reintenta sin la columna nueva o devuelve un mensaje que nombra la migración), así que se puede desplegar antes de correrlas.
+Migraciones a correr en Supabase (además de `schema.sql` + `realtime.sql`): `001_clientes`, `002_admin`, `003_breb_qr`, `004_pagos` (Wompi), `005_variantes` (columna `productos.variantes` JSONB para los combos), `006_insumos` (ingredientes + recetas), …, `012_producto_insumo_link`, `013_pago_tarjeta`, `014_mesas_cuentas_abiertas`, `015_empresa_categoria`, `016_modo_practica`, `017_carta_publica`, `018_rls_solo_lectura` + `019_rls_por_tabla` (seguridad; **verificadas en producción el 2026-11-13**), `020_revoke_ajustar_stock` (cinturón extra: quita EXECUTE de `ajustar_stock_*` a anon/authenticated), `021_salon_mesas` (plano del salón; ver *Plano del salón*), `022_realtime_publicacion` (habilita Realtime de ventas y egresos; ver *Realtime*). El código degrada si falta una (reintenta sin la columna nueva o devuelve un mensaje que nombra la migración), así que se puede desplegar antes de correrlas.
 
 **Cómo se detecta "falta la columna" (CRÍTICO — se rompió una vez):** hay que preguntar por **dos** códigos, con `faltaColumna()` de `lib/supabase/errores.ts`. PostgREST responde distinto según la operación: un **SELECT** devuelve `42703` (el error crudo de Postgres), pero un **INSERT/UPDATE** devuelve `PGRST204`, porque valida el cuerpo contra su propio caché de schema antes de mandárselo a Postgres. Mirar solo `42703` dejó el registro de negocios nuevos **totalmente roto** mientras faltaba la migración 016: el reintento nunca corría y el dueño veía "No pudimos crear tu negocio" para siempre. Además, el reintento debe soltar **solo la columna que falta** (`nombreColumnaFaltante()`), no todas las opcionales: al soltarlas en bloque, un restaurante nuevo se creaba sin su `categoria` y perdía el menú de Mesas.
 
@@ -139,6 +139,24 @@ Regla única: **si un producto tiene receta, la receta manda**. `productos.stock
 ### Mesas / cuentas abiertas (migración `014`)
 
 Una venta puede quedar en `estado = 'abierta'` con `ventas.mesa` (etiqueta libre). **No descuenta inventario ni cuenta como ingreso** hasta que se cobra: reportes y analítica no cambian porque filtran por `'completada'`. `lib/mesas/actions.ts`: `guardarCuenta` (abre o actualiza, reemplaza las líneas), `cobrarCuenta` (cierra **la misma** fila de `ventas` y ahí sí descuenta productos + ingredientes + bebidas) y `anularCuenta`. El cierre filtra por `.eq('estado','abierta')` para que dos meseros no descuenten dos veces. El carrito (`cart-store`) lleva `cuentaId`/`mesa`; con `cuentaId` puesto, el `PaymentModal` llama `cobrarCuenta` en vez de `registrarVenta`.
+
+**Tres reglas que se pagaron con errores reales (no quitarlas):**
+
+1. **La opción del combo se recupera del nombre.** `venta_items` no guarda la variante; el POS nombra la línea `"Producto · Opción"` (+ `" (Bebida)"`). `getCuentasAbiertas` la recupera comparando con `productos.variantes`, y `lineasParaCarrito` (`lib/mesas/carrito.ts`) arma el `lineId` con `calcularLineId` del carrito. Antes se recargaba con `variante: null` y el servidor le ponía el precio base: un combo de $25.000 se cobraba a $18.000 al retomar la mesa.
+2. **Huella de la cuenta (`lib/mesas/huella.ts`).** Guardar y cobrar REEMPLAZAN los platos por los del carrito. Con dos equipos, la caja cobraba su copia vieja y borraba la cerveza que el mesero acababa de agregar. El carrito guarda la huella al cargar la cuenta y `guardarCuenta`/`cobrarCuenta` la comparan con la base: si cambió, rechazan con `CUENTA_CAMBIO` ("vuelve a abrirla"). Todo `cargarCuenta` debe pasar `huella`.
+3. **`cobrarCuenta` reclama primero, escribe después.** El UPDATE a `completada` con `.eq('estado','abierta')` va ANTES de reescribir los platos (si fallan, vuelve a `abierta`). Y `guardarLineas` inserta las nuevas antes de borrar las viejas por id: al revés, un insert fallido dejaba la mesa sin platos.
+
+### Plano del salón (migración `021`)
+
+`/dashboard/mesas` muestra el plano si existe la 021 (`getSalon` → `disponible`); si no, la lista de siempre (`MesasManager`). Tablas `salon_zonas` (cuadrícula `cols`×`filas`) y `salon_piezas` (`tipo` mesa | cocina | barra | banos | entrada | caja | pared; mesas con `forma` y `puestos`; reserva en `reserva_*`). `ventas.mesa_id` amarra la cuenta a la mesa y `ventas.cuenta_pedida_en` la pone "por cobrar". **Índice único `ux_ventas_mesa_abierta`: una cuenta abierta por mesa**; el 23505 se traduce a "ya tiene una cuenta abierta".
+
+- `lib/salon/modelo.ts` es puro y lo comparten editor y servidor: `validarPlano` (dentro de la zona, nada encimado, nombres únicos), `hueco`, `salonInicial` (agranda la zona hasta que quepan todas). El servidor **revalida** con él en `guardarPlano`.
+- `guardarPlano` recibe el plano entero: actualiza lo propio (`upsert` solo con ids que ya son de la empresa; lo demás va por `insert`, así un id ajeno nunca se pisa), borra lo quitado y **no deja borrar una mesa con cuenta abierta**. Renombrar una mesa renombra su cuenta abierta.
+- Servicio (`components/salon/`): `Salon` (estado de cada mesa, lista/plano, cambiar y juntar), `Plano` (dibujo + arrastre con pointer events), `PanelMesa` (comanda y acciones), `EditorSalon`. Estados y colores en `ESTADOS` (`--reservada` es token de `globals.css`).
+- Cuentas viejas sin `mesa_id` cuyo nombre coincide con una mesa del plano se muestran en esa mesa (y quedan amarradas al volver a guardarlas).
+- Del plano al POS: `prepararMesa` (mesa libre) o `cargarCuenta({ mesaId, huella, cobrar })`; con `mesaId` el carrito guarda directo sin preguntar y vuelve a Mesas; `cobrar: true` abre el cobro al llegar.
+- `juntarCuentas` reclama la cuenta origen (→ cancelada) antes de mover sus líneas por id, y la borra al final; si la destino se cobró en el medio, devuelve exactamente esas líneas.
+- Realtime de `salon_piezas` va en un **canal aparte** en `RealtimeRefresher`: si la tabla no existe, Realtime rechaza el canal entero y no puede tumbar el de ventas.
 
 ### Pago con tarjeta y recargo (migración `013`)
 
@@ -187,7 +205,14 @@ Medido: 400–900 ms por navegación y 11 consultas por clic, con ~360 ms inicia
 
 ### Realtime
 
-`RealtimeRefresher` (Client Component en el DashboardLayout) escucha cambios en `ventas` y `egresos` vía Supabase Realtime y llama `router.refresh()` para actualizar los Server Components. **Requiere correr el SQL de `supabase/realtime.sql`** en el panel de Supabase para agregar esas tablas a la publicación `supabase_realtime`.
+`RealtimeRefresher` (Client Component en el DashboardLayout) escucha cambios en `ventas` y `egresos` (y `salon_piezas` en Mesas) vía Supabase Realtime y llama `router.refresh()` para actualizar los Server Components. **Requiere la migración `022_realtime_publicacion`** (agrega las tablas a la publicación `supabase_realtime`; reemplaza a `realtime.sql`, que en producción nunca quedó aplicado).
+
+**Hasta el 2026-11-15 el tiempo real NUNCA funcionó en producción, por dos errores que no daban ninguna señal** (se encontraron mirando el websocket del navegador con CDP):
+
+1. **Un canal con varias tablas muere entero si falta una.** `ventas` y `egresos` iban en el mismo canal, ninguna estaba publicada, y Supabase respondía `Unable to subscribe to changes…` para todo el canal. Ahora va **un canal por tabla**.
+2. **El canal se unía como anónimo.** El cliente del navegador carga la sesión de las cookies sin apuro; si el canal se une antes, el join sale sin `access_token`, Realtime aplica RLS como `anon` y no entrega nada. Ahora se hace `getSession()` + `realtime.setAuth(token)` **antes** de suscribirse.
+
+Para verificarlo: el `phx_join` debe llevar un token con `role=authenticated`, y cada canal debe responder `Subscribed to PostgreSQL`.
 
 ### Plan y gating
 
@@ -252,6 +277,7 @@ BANCOLOMBIA_CLIENT_SECRET
 BANCOLOMBIA_QR_BASE_URL          — debe NO contener 'sandbox' para activar la API
 BANCOLOMBIA_CERT_PATH            — cert mTLS (en .secrets/, gitignored)
 BANCOLOMBIA_KEY_PATH             — llave privada mTLS (en .secrets/, gitignored)
+BANCOLOMBIA_CERT_PEM / _KEY_PEM  — CONTENIDO del cert/llave (base64 o PEM) para Vercel; mandan sobre *_PATH
 BANCOLOMBIA_WEBHOOK_SECRET       — firma del webhook de conciliación
 ```
 
@@ -261,4 +287,4 @@ BANCOLOMBIA_WEBHOOK_SECRET       — firma del webhook de conciliación
 
 - **WhatsApp en producción**: el bot está implementado (`/api/webhook/whatsapp` + `lib/whatsapp/`); falta dar de alta el número en **Meta WhatsApp Business** y poner los tokens. Es configuración/aprobación, no código.
 - **Wompi a producción**: integrada y corriendo con llaves de **prueba** (`pub_test_`) + webhook configurado. Falta la aprobación de producción de Wompi y cambiar a llaves `pub_prod_` (recordar **Redeploy** en Vercel al cambiar env).
-- **Bre-B API Bancolombia**: los productos *QR Code Information* + *QR Payments Information* ya fueron **aprobados** en el portal. Para activarla faltan: (a) credenciales de producción (`BANCOLOMBIA_*`); (b) cambiar `bancolombia.ts` para leer el cert mTLS desde **variable de entorno** en vez de archivo (los `.secrets/` no se despliegan en Vercel); (c) confirmar con Bancolombia si Mostrador puede generar el QR de las llaves **de sus comercios** (rol agregador/partner) o solo de la propia; (d) servidor autorizado en el WAF. El cobro por **QR universal subido** ya funciona para cualquier banco.
+- **Bre-B API Bancolombia**: los productos *QR Code Information* + *QR Payments Information* ya fueron **aprobados** en el portal. Para activarla faltan: (a) credenciales de producción (`BANCOLOMBIA_*`); (b) ~~leer el cert mTLS desde variable de entorno~~ **hecho**: poner en Vercel `BANCOLOMBIA_CERT_PEM` + `BANCOLOMBIA_KEY_PEM` con el contenido en base64 (`base64 -w0 .secrets/bancolombia_cert.pem`); (c) confirmar con Bancolombia si Mostrador puede generar el QR de las llaves **de sus comercios** (rol agregador/partner) o solo de la propia; (d) servidor autorizado en el WAF. El cobro por **QR universal subido** ya funciona para cualquier banco.

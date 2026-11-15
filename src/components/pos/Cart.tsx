@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Trash2, Plus, Minus, ShoppingBag, X, UtensilsCrossed, Loader2 } from 'lucide-react';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useCart } from '@/stores/cart-store';
 import { formatCOP } from '@/lib/utils/format';
 import { guardarCuenta } from '@/lib/mesas/actions';
-import { MesaPicker } from '@/components/mesas/MesaPicker';
+import { MesaPicker, type MesaParaElegir } from '@/components/mesas/MesaPicker';
 import { PaymentModal } from './PaymentModal';
 import { ClienteSearch } from './ClienteSearch';
 import type { BrebConfig } from '@/lib/breb/queries';
@@ -17,11 +17,14 @@ export function Cart({
   negocio,
   breb,
   practica = false,
+  mesasSalon = [],
 }: {
   negocio: string;
   breb: BrebConfig;
   /** Modo práctica: la venta se simula y no se guarda. */
   practica?: boolean;
+  /** Mesas del plano del salón, para elegir a cuál va el pedido. */
+  mesasSalon?: MesaParaElegir[];
 }) {
   const router = useRouter();
   const items = useCart((s) => s.items);
@@ -32,23 +35,47 @@ export function Cart({
   const totalItems = useCart((s) => s.totalItems());
   const cuentaId = useCart((s) => s.cuentaId);
   const mesa = useCart((s) => s.mesa);
+  const mesaId = useCart((s) => s.mesaId);
+  const huella = useCart((s) => s.huella);
   const cliente = useCart((s) => s.cliente);
+  const cobrarAlAbrir = useCart((s) => s.cobrarAlAbrir);
+  const setCobrarAlAbrir = useCart((s) => s.setCobrarAlAbrir);
 
   const [open, setOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [mesaPicker, setMesaPicker] = useState(false);
   const [guardando, startGuardar] = useTransition();
+  // El cobro empezó desde el plano: al terminar se vuelve a Mesas. Se guarda
+  // aparte porque el carrito se vacía en cuanto la venta queda registrada.
+  const volverAMesas = useRef(false);
 
   const empty = items.length === 0;
+  const enMesa = Boolean(cuentaId || mesaId);
+
+  // Tocaron "Cobrar" en el plano: el modal de cobro se abre al llegar.
+  useEffect(() => {
+    if (cobrarAlAbrir && items.length > 0) {
+      setCobrarAlAbrir(false);
+      abrirCobro();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cobrarAlAbrir, items.length]);
+
+  function abrirCobro() {
+    volverAMesas.current = Boolean(cuentaId);
+    setPayOpen(true);
+  }
 
   /** Deja el pedido abierto en una mesa en vez de cobrarlo ya. */
-  function guardarEnMesa(etiqueta: string) {
+  function guardarEnMesa(etiqueta: string, idMesa: string | null = mesaId) {
     if (!etiqueta) return;
 
     startGuardar(async () => {
       const res = await guardarCuenta({
         venta_id: cuentaId,
         mesa: etiqueta,
+        mesa_id: idMesa,
+        huella,
         cliente_id: cliente?.id ?? null,
         items: items.map((i) => ({
           producto_id: i.producto_id,
@@ -65,7 +92,9 @@ export function Cart({
         clear();
         setOpen(false);
         setMesaPicker(false);
-        router.refresh();
+        // Con plano, el mesero vuelve al salón a atender la siguiente mesa.
+        if (idMesa) router.push('/dashboard/mesas');
+        else router.refresh();
       } else {
         toast('No se pudo guardar', { description: res.error });
       }
@@ -83,11 +112,13 @@ export function Cart({
             <div>
               <p className="text-xs text-muted-foreground">{negocio}</p>
               <h2 className="text-lg font-semibold">
-                {cuentaId ? mesa : 'Tu venta'}
+                {enMesa ? mesa : 'Tu venta'}
               </h2>
-              {cuentaId && (
+              {cuentaId ? (
                 <p className="text-xs text-[var(--utilidad)]">Cuenta abierta · cobra al final</p>
-              )}
+              ) : mesaId ? (
+                <p className="text-xs text-muted-foreground">Pedido nuevo para esta mesa</p>
+              ) : null}
             </div>
             {!empty && (
               <button
@@ -169,24 +200,29 @@ export function Cart({
             size="lg"
             className="h-14 w-full rounded-2xl text-base font-semibold"
             disabled={empty}
-            onClick={() => setPayOpen(true)}
+            onClick={abrirCobro}
           >
             Cobrar {!empty && formatCOP(total)}
           </Button>
 
-          {/* Dejar la cuenta abierta para seguirle agregando (mesas). */}
+          {/* Dejar la cuenta abierta para seguirle agregando (mesas). Si ya se
+              sabe la mesa (viene del plano), guarda directo sin preguntar. */}
           <Button
             variant="outline"
             className="h-12 w-full rounded-2xl gap-2"
             disabled={empty || guardando}
-            onClick={() => setMesaPicker(true)}
+            onClick={() => (mesaId && mesa ? guardarEnMesa(mesa) : setMesaPicker(true))}
           >
             {guardando ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <UtensilsCrossed className="h-4 w-4" />
             )}
-            {cuentaId ? `Actualizar ${mesa ?? 'la cuenta'}` : 'Guardar en mesa'}
+            {cuentaId
+              ? `Actualizar ${mesa ?? 'la cuenta'}`
+              : mesaId
+                ? `Guardar en ${mesa}`
+                : 'Guardar en mesa'}
           </Button>
         </div>
 
@@ -212,6 +248,10 @@ export function Cart({
         onSuccess={() => {
           setPayOpen(false);
           setOpen(false);
+          if (volverAMesas.current) {
+            volverAMesas.current = false;
+            router.push('/dashboard/mesas');
+          }
         }}
       />
 
@@ -219,8 +259,9 @@ export function Cart({
         open={mesaPicker}
         valorInicial={mesa}
         guardando={guardando}
+        mesas={mesasSalon}
         onCancel={() => setMesaPicker(false)}
-        onConfirm={guardarEnMesa}
+        onConfirm={(etiqueta, idMesa) => guardarEnMesa(etiqueta, idMesa ?? null)}
       />
 
       {/* ── Desktop: sidebar fijo al lado derecho ── */}
@@ -241,6 +282,7 @@ export function Cart({
             <div className="flex items-center gap-2">
               <ShoppingBag className="h-5 w-5 shrink-0" />
               <span className="font-semibold">
+                {enMesa && mesa ? `${mesa} · ` : ''}
                 {totalItems} {totalItems === 1 ? 'producto' : 'productos'}
               </span>
             </div>
@@ -270,7 +312,7 @@ export function Cart({
             <div className="relative flex shrink-0 items-center justify-between px-4 pb-2 pt-4">
               <div className="absolute left-1/2 top-2 h-1 w-10 -translate-x-1/2 rounded-full bg-border" />
               <p className="text-base font-semibold">
-                Tu venta
+                {enMesa && mesa ? mesa : 'Tu venta'}
                 {!empty && (
                   <span className="ml-2 text-sm font-normal text-muted-foreground">
                     · {totalItems} {totalItems === 1 ? 'item' : 'items'}

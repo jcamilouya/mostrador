@@ -9,6 +9,8 @@ import { UtensilsCrossed, Clock, Plus, Trash2, Loader2, Receipt } from 'lucide-r
 import { anularCuenta } from '@/lib/mesas/actions';
 import type { CuentaAbierta } from '@/lib/mesas/queries';
 import { useCart } from '@/stores/cart-store';
+import { lineasParaCarrito } from '@/lib/mesas/carrito';
+import { huellaCuenta } from '@/lib/mesas/huella';
 import { formatCOP } from '@/lib/utils/format';
 
 /** Minutos que lleva abierta la cuenta. */
@@ -57,21 +59,10 @@ export function MesasManager({ cuentas }: { cuentas: CuentaAbierta[] }) {
     cargarCuenta({
       id: cuenta.id,
       mesa: cuenta.mesa,
+      mesaId: cuenta.mesaId,
       cliente: cuenta.cliente,
-      items: cuenta.items
-        .filter((i) => i.producto_id)
-        .map((i) => ({
-          lineId: `${i.producto_id}::${i.nombre_producto}`,
-          producto_id: i.producto_id as string,
-          nombre: i.nombre_producto,
-          variante: null,
-          insumo_extra_id: i.insumo_extra_id,
-          precio_venta: i.precio_unitario,
-          precio_compra: i.precio_compra,
-          cantidad: i.cantidad,
-          // La cuenta ya existe: no volvemos a topar por stock al retomarla.
-          stock_disponible: Number.POSITIVE_INFINITY,
-        })),
+      items: lineasParaCarrito(cuenta),
+      huella: huellaCuenta(cuenta.items),
     });
     router.push('/dashboard/pos');
   }

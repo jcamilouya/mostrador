@@ -79,6 +79,7 @@
   --ingreso: oklch(0.6 0.13 160);   /* verde esmeralda */
   --egreso: oklch(0.68 0.16 25);    /* coral suave */
   --utilidad: oklch(0.78 0.15 75);  /* ámbar */
+  --reservada: oklch(0.6 0.15 300); /* morado: mesa reservada */
 
   --chart-1: oklch(0.6 0.13 160);
   --chart-2: oklch(0.68 0.16 25);
@@ -119,6 +120,7 @@
   --ingreso: oklch(0.7 0.13 160);
   --egreso: oklch(0.74 0.16 25);
   --utilidad: oklch(0.82 0.15 75);
+  --reservada: oklch(0.72 0.14 300);
 
   --chart-1: oklch(0.7 0.13 160);
   --chart-2: oklch(0.74 0.16 25);

@@ -4,6 +4,7 @@ import { getEmpresaIdDelUsuario, getCategorias } from '@/lib/inventario/queries'
 import { getProductosPOS, getVentasHoy, getTotalVentasHoy } from '@/lib/pos/queries';
 import { getInsumos } from '@/lib/insumos/queries';
 import { getBrebConfig } from '@/lib/breb/queries';
+import { getMesasParaPOS } from '@/lib/salon/queries';
 import { getSesion } from '@/lib/auth/sesion';
 import { GuiaPOS } from '@/components/practica/GuiaPOS';
 import { ProductGrid } from '@/components/pos/ProductGrid';
@@ -31,13 +32,14 @@ export default async function POSPage() {
   const empresaId = sesion?.empresaId ?? (await getEmpresaIdDelUsuario());
   if (!empresaId) redirect('/onboarding');
 
-  const [productos, categorias, ventasHoy, resumenHoy, breb, insumos] = await Promise.all([
+  const [productos, categorias, ventasHoy, resumenHoy, breb, insumos, mesasSalon] = await Promise.all([
     getProductosPOS(empresaId),
     getCategorias(empresaId),
     getVentasHoy(empresaId),
     getTotalVentasHoy(empresaId),
     getBrebConfig(empresaId),
     getInsumos(empresaId),
+    getMesasParaPOS(empresaId),
   ]);
 
   const bebidas = insumos
@@ -65,7 +67,12 @@ export default async function POSPage() {
       </div>
 
       {/* Carrito */}
-      <Cart negocio={breb.nombreNegocio} breb={breb} practica={sesion?.modoPractica === true} />
+      <Cart
+        negocio={breb.nombreNegocio}
+        breb={breb}
+        practica={sesion?.modoPractica === true}
+        mesasSalon={mesasSalon}
+      />
     </div>
   );
 }

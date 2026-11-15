@@ -12,6 +12,12 @@ type CartState = {
   cuentaId: string | null;
   /** Etiqueta de esa cuenta: "Mesa 4", "Para llevar"… */
   mesa: string | null;
+  /** Mesa del plano del salón (migración 021). Con ella no se pregunta "¿a qué mesa?". */
+  mesaId: string | null;
+  /** Al llegar al POS, abrir el cobro de una vez (tocaron "Cobrar" en el plano). */
+  cobrarAlAbrir: boolean;
+  /** Cómo estaba la cuenta al cargarla (ver `lib/mesas/huella.ts`). */
+  huella: string | null;
   add: (item: Omit<CartItem, 'cantidad' | 'lineId'>) => void;
   setCantidad: (lineId: string, cantidad: number) => void;
   remove: (lineId: string) => void;
@@ -20,9 +26,15 @@ type CartState = {
   cargarCuenta: (cuenta: {
     id: string;
     mesa: string;
+    mesaId?: string | null;
     items: CartItem[];
     cliente?: ClienteSel | null;
+    cobrar?: boolean;
+    huella?: string | null;
   }) => void;
+  /** Empieza un pedido nuevo en una mesa libre del plano. */
+  prepararMesa: (mesa: { id: string; nombre: string }) => void;
+  setCobrarAlAbrir: (v: boolean) => void;
   setMesa: (mesa: string | null) => void;
   clear: () => void;
   total: () => number;
@@ -30,7 +42,7 @@ type CartState = {
 };
 
 // Una línea por producto + opción elegida (+ bebida elegida).
-function calcularLineId(item: {
+export function calcularLineId(item: {
   producto_id: string;
   variante?: string | null;
   insumo_extra_id?: string | null;
@@ -45,6 +57,9 @@ export const useCart = create<CartState>((set, get) => ({
   cliente: null,
   cuentaId: null,
   mesa: null,
+  mesaId: null,
+  cobrarAlAbrir: false,
+  huella: null,
   add: (item) =>
     set((state) => {
       const lineId = calcularLineId(item);
@@ -95,10 +110,34 @@ export const useCart = create<CartState>((set, get) => ({
       items: cuenta.items,
       cuentaId: cuenta.id,
       mesa: cuenta.mesa,
+      mesaId: cuenta.mesaId ?? null,
       cliente: cuenta.cliente ?? null,
+      cobrarAlAbrir: cuenta.cobrar === true,
+      huella: cuenta.huella ?? null,
     }),
+  // Lo que hubiera en el carrito se descarta: era de otra venta.
+  prepararMesa: (mesa) =>
+    set({
+      items: [],
+      cliente: null,
+      cuentaId: null,
+      mesa: mesa.nombre,
+      mesaId: mesa.id,
+      cobrarAlAbrir: false,
+      huella: null,
+    }),
+  setCobrarAlAbrir: (v) => set({ cobrarAlAbrir: v }),
   setMesa: (mesa) => set({ mesa }),
-  clear: () => set({ items: [], cliente: null, cuentaId: null, mesa: null }),
+  clear: () =>
+    set({
+      items: [],
+      cliente: null,
+      cuentaId: null,
+      mesa: null,
+      mesaId: null,
+      cobrarAlAbrir: false,
+      huella: null,
+    }),
   total: () => get().items.reduce((acc, i) => acc + i.cantidad * i.precio_venta, 0),
   totalItems: () => get().items.reduce((acc, i) => acc + i.cantidad, 0),
 }));
