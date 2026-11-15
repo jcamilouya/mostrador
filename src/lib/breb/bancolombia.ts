@@ -30,11 +30,37 @@ function baseUrl(): string {
 }
 
 /**
+ * Lee un PEM guardado en una variable de entorno. Acepta tres formas, porque
+ * cada panel (Vercel, .env, CLI) lo pega distinto:
+ *  - el PEM tal cual, con saltos de línea reales;
+ *  - el PEM en una sola línea con "\n" literales;
+ *  - el archivo completo en base64 (lo más seguro para pegar en Vercel).
+ */
+function pemDesdeEnv(valor: string): Buffer {
+  const limpio = valor.trim();
+  if (limpio.includes('-----BEGIN')) {
+    return Buffer.from(limpio.replace(/\\n/g, '\n'));
+  }
+  return Buffer.from(limpio, 'base64');
+}
+
+/**
  * Certificado de cliente (mTLS). La API lo exige en producción
  * (application-authentication: certificate). En mostrador/.secrets están el
  * cert y la llave generados para registrar la app en el portal de Bancolombia.
+ *
+ * En Vercel `.secrets/` NO se despliega, así que allá van en variables de
+ * entorno: BANCOLOMBIA_CERT_PEM + BANCOLOMBIA_KEY_PEM (contenido, ver
+ * `pemDesdeEnv`). En local siguen sirviendo las rutas *_PATH. Si están las
+ * dos, mandan las *_PEM.
  */
 function clientTls(): { cert: Buffer; key: Buffer } | null {
+  const certPem = process.env.BANCOLOMBIA_CERT_PEM;
+  const keyPem = process.env.BANCOLOMBIA_KEY_PEM;
+  if (certPem && keyPem) {
+    return { cert: pemDesdeEnv(certPem), key: pemDesdeEnv(keyPem) };
+  }
+
   const certPath = process.env.BANCOLOMBIA_CERT_PATH;
   const keyPath = process.env.BANCOLOMBIA_KEY_PATH;
   if (!certPath || !keyPath) return null;
